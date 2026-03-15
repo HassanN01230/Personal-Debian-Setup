@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 # Usage: bash debian-setup.sh
 
+# 0. Autologon and removing password
+sudo mkdir -p /etc/sddm.conf.d
+echo -e "[Autologin]\nUser=$USER\nSession=plasma" | sudo tee /etc/sddm.conf.d/autologin.conf  # Auto-login
+echo "$USER ALL=(ALL:ALL) NOPASSWD: ALL" | sudo tee /etc/sudoers.d/nopasswd  # Passwordless sudo
+
 # 1. System Update
 echo -e "Updating system packages"
 sudo apt update && sudo apt upgrade -y
@@ -80,6 +85,12 @@ sudo rm cursor.deb
 # wget -q -O- https://download.opensuse.org/repositories/home:/strycore/Debian_12/Release.key \
 #   | sudo gpg --dearmor -o /etc/apt/keyrings/lutris.gpg
 # sudo apt update && sudo apt install -y lutris
+
+# Nightlight settings
+kwriteconfig6 --file kwinrc --group NightColor --key Active true
+kwriteconfig6 --file kwinrc --group NightColor --key Mode Constant
+kwriteconfig6 --file kwinrc --group NightColor --key NightTemperature 5300
+qdbus6 org.kde.KWin /KWin reconfigure
 
 sudo rm -- "$0" # delete this script file
 sudo reboot
