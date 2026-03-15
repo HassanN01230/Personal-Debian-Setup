@@ -35,7 +35,7 @@ sudo apt install -y mesa-vulkan-drivers libglx-mesa0:i386 mesa-vulkan-drivers:i3
 sudo apt install -y pipewire pipewire-audio pipewire-pulse wireplumber bluetooth bluez
 sudo systemctl enable --now bluetooth
 sudo apt install -y libavcodec-extra gstreamer1.0-plugins-bad gstreamer1.0-plugins-ugly ffmpeg
-sudo apt install -y mpv vlc obs-studio unrar wget
+sudo apt install -y mpv vlc obs-studio unrar wget firefox-esr
 
 sudo apt install -y git python3-pip python3-venv pipx build-essential gdb cmake
 pipx ensurepath
@@ -74,9 +74,9 @@ rm discord.deb
 #   | sudo gpg --dearmor -o /etc/apt/keyrings/lutris.gpg
 # sudo apt update && sudo apt install -y lutris
 
-
-echo "Remaining:"
-echo "  - Reboot to apply shell change (Fish) and any kernel updates"
-echo "  - Multi-monitor layout: System Settings → Display and Monitor"
-echo "  - Git identity: git config --global user.name / user.email"
-echo "  - Tailscale auth: sudo tailscale up"
+sudo reboot
+# echo "Remaining:"
+# echo "  - Reboot to apply shell change (Fish) and any kernel updates"
+# echo "  - Multi-monitor layout: System Settings → Display and Monitor"
+# echo "  - Git identity: git config --global user.name / user.email"
+# echo "  - Tailscale auth: sudo tailscale up"
