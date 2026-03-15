@@ -28,7 +28,6 @@ sudo apt install -y mesa-vulkan-drivers libvulkan1 vulkan-tools mesa-utils
 echo -e "32-bit Vulkan libraries"
 sudo dpkg --add-architecture i386
 sudo apt update
-sudo apt install -y steam-installer
 sudo apt install -y mesa-vulkan-drivers libglx-mesa0:i386 mesa-vulkan-drivers:i386 libgl1-mesa-dri:i386
 
 # 7. Installing Apps 
