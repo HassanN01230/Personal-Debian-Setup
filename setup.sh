@@ -44,13 +44,12 @@ curl -fsSL https://tailscale.com/install.sh | sh
 sudo systemctl enable tailscaled
 
 wget https://github.com/jellyfin/jellyfin-desktop/releases/download/v1.12.0/jellyfin-media-player_1.12.0-trixie.deb
-sudo chmod +x jellyfin-media-player_1.12.0-trixie.deb
 sudo apt install ./jellyfin-media-player_1.12.0-trixie.deb
 sudo rm jellyfin-media-player_1.12.0-trixie.deb
 
 wget -O discord.deb "https://discord.com/api/download?platform=linux&format=deb"
 sudo apt install -y ./discord.deb
-rm discord.deb
+sudo rm discord.deb
 
 # # --- OnlyOffice ---------------------------------------------------------------
 # echo -e "Installing OnlyOffice Desktop Editors"
@@ -74,6 +73,7 @@ rm discord.deb
 #   | sudo gpg --dearmor -o /etc/apt/keyrings/lutris.gpg
 # sudo apt update && sudo apt install -y lutris
 
+sudo rm -- "$0" # delete this script file
 sudo reboot
 # echo "Remaining:"
 # echo "  - Reboot to apply shell change (Fish) and any kernel updates"
