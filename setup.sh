@@ -44,12 +44,21 @@ curl -fsSL https://tailscale.com/install.sh | sh
 sudo systemctl enable tailscaled
 
 wget https://github.com/jellyfin/jellyfin-desktop/releases/download/v1.12.0/jellyfin-media-player_1.12.0-trixie.deb
-sudo apt install ./jellyfin-media-player_1.12.0-trixie.deb
+sudo DEBIAN_FRONTEND=noninteractive apt install ./jellyfin-media-player_1.12.0-trixie.deb
 sudo rm jellyfin-media-player_1.12.0-trixie.deb
 
 wget -O discord.deb "https://discord.com/api/download?platform=linux&format=deb"
-sudo apt install -y ./discord.deb
+sudo DEBIAN_FRONTEND=noninteractive apt install -y ./discord.deb
 sudo rm discord.deb
+
+wget -O vscode.deb "https://code.visualstudio.com/sha/download?build=stable&os=linux-deb-x64"
+sudo DEBIAN_FRONTEND=noninteractive apt install -y ./vscode.deb
+sudo rm vscode.deb
+
+CURSOR_VER=$(curl -s "https://api2.cursor.sh/updates/latest?platform=linux-x64-deb" | grep -oP '"version":"\K[^"]+')
+wget -O cursor.deb "https://api2.cursor.sh/updates/download/golden/linux-x64-deb/cursor/$CURSOR_VER"
+sudo DEBIAN_FRONTEND=noninteractive apt install -y ./cursor.deb
+sudo rm cursor.deb
 
 # # --- OnlyOffice ---------------------------------------------------------------
 # echo -e "Installing OnlyOffice Desktop Editors"
