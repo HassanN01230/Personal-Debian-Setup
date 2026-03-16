@@ -72,25 +72,26 @@ pipx ensurepath >> "$LOG" 2>&1
 
 # 7. Installing apps
 CHOICES=$(whiptail --title "Choose Apps to Install" --checklist \
-"Use SPACE to toggle, ENTER to confirm:" 20 50 10 \
-"tailscale"   "Tailscale"              ON \
-"discord"     "Discord"                ON \
-"vscode"      "VS Code"                ON \
-"cursor"      "Cursor"                 ON \
-"jellyfin"    "Jellyfin Media Player"  ON \
-"heroic"      "Heroic Games Launcher"  ON \
-"localsend"   "LocalSend"              ON \
-"steam"       "Steam"                  ON \
-"lutris"      "Lutris"                 ON \
-"lazygit"     "Lazygit"                ON \
+"Use SPACE to toggle, ENTER to confirm or ESC to cancel:" 20 40 10 \
+"Tailscale"              " " ON \
+"Discord"                " " ON \
+"Vscode"                 " " ON \
+"Cursor"                 " " ON \
+"Jellyfin Client"        " " ON \
+"Heroic Games Launcher"  " " ON \
+"LocalSend"              " " ON \
+"Steam"                  " " ON \
+"Lutris"                 " " ON \
+"Lazygit"                " " ON \
 3>&1 1>&2 2>&3)
 
 if [ $? -ne 0 ]; then
     say "App selection cancelled, skipping app installs."
 else
-    say "Installing apps:"
+    APPS_LIST=$(echo "$CHOICES" | sed 's/" "/", /g' | tr -d '"')
+    say "Installing apps: $APPS_LIST"
 
-    if [[ "$CHOICES" == *"tailscale"* ]]; then
+    if [[ "$CHOICES" == *"Tailscale"* ]]; then
         if curl -fsSL https://tailscale.com/install.sh | sh >> "$LOG" 2>&1; then
             sudo systemctl enable tailscaled >> "$LOG" 2>&1
             status "Tailscale installed successfully"
@@ -100,7 +101,7 @@ else
         fi
     fi
 
-    if [[ "$CHOICES" == *"discord"* ]]; then
+    if [[ "$CHOICES" == *"Discord"* ]]; then
         if wget -qO "$TMPDIR/discord.deb" "https://discord.com/api/download?platform=linux&format=deb" && sudo DEBIAN_FRONTEND=noninteractive apt install -y "$TMPDIR/discord.deb" >> "$LOG" 2>&1; then
             status "Discord installed successfully"
         else
@@ -109,16 +110,16 @@ else
         fi
     fi
 
-    if [[ "$CHOICES" == *"vscode"* ]]; then
+    if [[ "$CHOICES" == *"Vscode"* ]]; then
         if wget -qO "$TMPDIR/vscode.deb" "https://code.visualstudio.com/sha/download?build=stable&os=linux-deb-x64" && sudo DEBIAN_FRONTEND=noninteractive apt install -y "$TMPDIR/vscode.deb" >> "$LOG" 2>&1; then
-            status "VS Code installed successfully"
+            status "Vscode installed successfully"
         else
-            status "VS Code FAILED to install"
+            status "Vscode FAILED to install"
             FAILED+=("vscode")
         fi
     fi
 
-    if [[ "$CHOICES" == *"cursor"* ]]; then
+    if [[ "$CHOICES" == *"Cursor"* ]]; then
         CURSOR_VER=$(curl -s "https://api2.cursor.sh/updates/latest?platform=linux-x64-deb" | grep -oP '"version":"\K[^"]+')
         if wget -O "$TMPDIR/cursor.deb" "https://api2.cursor.sh/updates/download/golden/linux-x64-deb/cursor/$CURSOR_VER" >> "$LOG" 2>&1 && sudo DEBIAN_FRONTEND=noninteractive apt install -y "$TMPDIR/cursor.deb" >> "$LOG" 2>&1; then
             status "Cursor installed successfully"
@@ -128,17 +129,17 @@ else
         fi
     fi
 
-    if [[ "$CHOICES" == *"jellyfin"* ]]; then
+    if [[ "$CHOICES" == *"Jellyfin Client"* ]]; then
         JELLYFIN_DEB_URL=$(curl -s "https://api.github.com/repos/jellyfin/jellyfin-desktop/releases/latest" | grep browser_download_url | grep "$DEBIAN_CODENAME" | grep -oP 'https://[^"]+')  # jellyfin url needs different grep for each debian release so getting codename dynamically to future proof it
         if [[ -n "$JELLYFIN_DEB_URL" ]] && wget -qO "$TMPDIR/jellyfin.deb" "$JELLYFIN_DEB_URL" && sudo DEBIAN_FRONTEND=noninteractive apt install -y "$TMPDIR/jellyfin.deb" >> "$LOG" 2>&1; then
-            status "Jellyfin Desktop installed successfully"
+            status "Jellyfin Client installed successfully"
         else
-            status "Jellyfin Desktop FAILED to install"
+            status "Jellyfin Client FAILED to install"
             FAILED+=("jellyfin-desktop")
         fi
     fi
 
-    if [[ "$CHOICES" == *"heroic"* ]]; then
+    if [[ "$CHOICES" == *"Heroic Games Launcher"* ]]; then
         HEROIC_DEB_URL=$(curl -s "https://api.github.com/repos/Heroic-Games-Launcher/HeroicGamesLauncher/releases/latest" | grep browser_download_url | grep linux-amd64.deb | grep -oP 'https://[^"]+')
         if [[ -n "$HEROIC_DEB_URL" ]] && wget -qO "$TMPDIR/heroic.deb" "$HEROIC_DEB_URL" && sudo DEBIAN_FRONTEND=noninteractive apt install -y "$TMPDIR/heroic.deb" >> "$LOG" 2>&1; then
             status "Heroic installed successfully"
@@ -148,7 +149,7 @@ else
         fi
     fi
 
-    if [[ "$CHOICES" == *"localsend"* ]]; then
+    if [[ "$CHOICES" == *"LocalSend"* ]]; then
         LOCALSEND_DEB_URL=$(curl -s "https://api.github.com/repos/localsend/localsend/releases/latest" | grep browser_download_url | grep linux-x86-64.deb | grep -oP 'https://[^"]+')
         if [[ -n "$LOCALSEND_DEB_URL" ]] && wget -qO "$TMPDIR/localsend.deb" "$LOCALSEND_DEB_URL" && sudo DEBIAN_FRONTEND=noninteractive apt install -y "$TMPDIR/localsend.deb" >> "$LOG" 2>&1; then
             status "LocalSend installed successfully"
@@ -158,7 +159,7 @@ else
         fi
     fi
 
-    if [[ "$CHOICES" == *"steam"* ]]; then
+    if [[ "$CHOICES" == *"Steam"* ]]; then
         if wget -qO "$TMPDIR/steam.deb" "https://cdn.akamai.steamstatic.com/client/installer/steam.deb" && sudo DEBIAN_FRONTEND=noninteractive apt install -y "$TMPDIR/steam.deb" >> "$LOG" 2>&1; then
             status "Steam installed successfully"
         else
@@ -167,7 +168,7 @@ else
         fi
     fi
 
-    if [[ "$CHOICES" == *"lutris"* ]]; then
+    if [[ "$CHOICES" == *"Lutris"* ]]; then
         LUTRIS_DEB_URL=$(curl -s "https://api.github.com/repos/lutris/lutris/releases/latest" | grep browser_download_url | grep '_all.deb' | grep -oP 'https://[^"]+')
         if [[ -n "$LUTRIS_DEB_URL" ]] && wget -qO "$TMPDIR/lutris.deb" "$LUTRIS_DEB_URL" && sudo DEBIAN_FRONTEND=noninteractive apt install -y "$TMPDIR/lutris.deb" >> "$LOG" 2>&1; then
             status "Lutris installed successfully"
@@ -177,7 +178,7 @@ else
         fi
     fi
 
-    if [[ "$CHOICES" == *"lazygit"* ]]; then
+    if [[ "$CHOICES" == *"Lazygit"* ]]; then
         LAZYGIT_VER=$(curl -s "https://api.github.com/repos/jesseduffield/lazygit/releases/latest" | grep -oP '"tag_name":\s*"v\K[^"]+')
         if [[ -n "$LAZYGIT_VER" ]] \
         && curl -Lo "$TMPDIR/lazygit.tar.gz" "https://github.com/jesseduffield/lazygit/releases/latest/download/lazygit_${LAZYGIT_VER}_Linux_x86_64.tar.gz" >> "$LOG" 2>&1 \
@@ -196,7 +197,7 @@ kwriteconfig6 --file kwinrc --group NightColor --key Active true
 kwriteconfig6 --file kwinrc --group NightColor --key Mode Constant             # Nightlight configuration
 kwriteconfig6 --file kwinrc --group NightColor --key NightTemperature 5300
 qdbus6 org.kde.KWin /KWin reconfigure
-kwriteconfig6 --file ksmserverrc --group General --key confirmLogout false
+kwriteconfig6 --file ksmserverrc --group General --key confirmLogout false   # disable confirmation for logout
 
 # 9. Cleanup
 rm -rf "$TMPDIR" # remove the temporary directory
@@ -208,6 +209,7 @@ if [[ ${#FAILED[@]} -gt 0 ]]; then
     say "These failed to install: ${FAILED[*]}"
     status "NOT rebooting. Check log: $LOG"
 else
-    say "Everything installed successfully. Rebooting..."
+    say "Everything installed successfully. Rebooting in 5 seconds..."
+    sleep 5
     sudo reboot
 fi
