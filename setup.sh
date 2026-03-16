@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Usage: bash debian-setup.sh
+# Usage: bash setup.sh
 
-# 0. Autologon and removing password
+# 0. Autologon and removing sudo password cuz im sick of typing it every 5 seconds (u will still have to type if resuming from sleep or somethin)
 sudo mkdir -p /etc/sddm.conf.d
 echo -e "[Autologin]\nUser=$USER\nSession=plasma" | sudo tee /etc/sddm.conf.d/autologin.conf  # Auto-login
 echo "$USER ALL=(ALL:ALL) NOPASSWD: ALL" | sudo tee /etc/sudoers.d/nopasswd  # Passwordless sudo
@@ -47,7 +47,7 @@ pipx ensurepath
 curl -fsSL https://tailscale.com/install.sh | sh
 sudo systemctl enable tailscaled
 
-wget https://github.com/jellyfin/jellyfin-desktop/releases/download/v1.12.0/jellyfin-media-player_1.12.0-trixie.deb
+wget https://github.com/jellyfin/jellyfin-desktop/releases/download/v1.12.0/jellyfin-media-player_1.12.0-trixie.deb  # Have to change to flatpak so no static url
 sudo DEBIAN_FRONTEND=noninteractive apt install ./jellyfin-media-player_1.12.0-trixie.deb
 sudo rm jellyfin-media-player_1.12.0-trixie.deb
 
@@ -64,29 +64,7 @@ wget -O cursor.deb "https://api2.cursor.sh/updates/download/golden/linux-x64-deb
 sudo DEBIAN_FRONTEND=noninteractive apt install -y ./cursor.deb
 sudo rm cursor.deb
 
-# # --- OnlyOffice ---------------------------------------------------------------
-# echo -e "Installing OnlyOffice Desktop Editors"
-# mkdir -p -m 700 ~/.gnupg
-# gpg --no-default-keyring \
-#     --keyring gnupg-ring:/tmp/onlyoffice.gpg \
-#     --keyserver hkp://keyserver.ubuntu.com:80 \
-#     --recv-keys CB2DE8E5
-# chmod 644 /tmp/onlyoffice.gpg
-# sudo chown root:root /tmp/onlyoffice.gpg
-# sudo mv /tmp/onlyoffice.gpg /usr/share/keyrings/onlyoffice.gpg
-# echo 'deb [signed-by=/usr/share/keyrings/onlyoffice.gpg] https://download.onlyoffice.com/repo/debian squeeze main' \
-#   | sudo tee -a /etc/apt/sources.list.d/onlyoffice.list
-# sudo apt update && sudo apt install -y onlyoffice-desktopeditors
-
-# # --- Lutris -------------------------------------------------------------------
-# echo -e "Installing Lutris"
-# echo -e "Types: deb\nURIs: https://download.opensuse.org/repositories/home:/strycore/Debian_12/\nSuites: ./\nComponents: \nSigned-By: /etc/apt/keyrings/lutris.gpg" \
-#   | sudo tee /etc/apt/sources.list.d/lutris.sources > /dev/null
-# wget -q -O- https://download.opensuse.org/repositories/home:/strycore/Debian_12/Release.key \
-#   | sudo gpg --dearmor -o /etc/apt/keyrings/lutris.gpg
-# sudo apt update && sudo apt install -y lutris
-
-# Nightlight settings
+# 8. Nightlight settings
 kwriteconfig6 --file kwinrc --group NightColor --key Active true
 kwriteconfig6 --file kwinrc --group NightColor --key Mode Constant
 kwriteconfig6 --file kwinrc --group NightColor --key NightTemperature 5300
@@ -94,8 +72,3 @@ qdbus6 org.kde.KWin /KWin reconfigure
 
 sudo rm -- "$0" # delete this script file
 sudo reboot
-# echo "Remaining:"
-# echo "  - Reboot to apply shell change (Fish) and any kernel updates"
-# echo "  - Multi-monitor layout: System Settings → Display and Monitor"
-# echo "  - Git identity: git config --global user.name / user.email"
-# echo "  - Tailscale auth: sudo tailscale up"
