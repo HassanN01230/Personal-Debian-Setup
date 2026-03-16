@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
-# Usage: bash setup.sh
+# Usage: chmod +x setup.sh && ./setup.sh
+[[ -f "$0" && "$0" == *.sh ]] && chmod +x "$0" # doesnt really matter but just in case the script is run as a file, make it executable
 
-LOG="$HOME/Desktop/setup-log-$(date '+%Y-%m-%d_%H-%M-%S').log"
+REAL_USER="${SUDO_USER:-$USER}"
+REAL_HOME=$(eval echo ~"$REAL_USER")
+LOG="$REAL_HOME/Desktop/setup-log-$(date '+%Y-%m-%d_%H-%M-%S').log"
 mkdir -p "$(dirname "$LOG")"
 
 FAILED=()  # array to store the names of the packages that failed to install
@@ -13,8 +16,8 @@ status() { echo "$*" | tee -a "$LOG"; }
 # 0. Autologon and removing sudo password cuz im sick of typing it every 5 seconds (u will still have to type if resuming from sleep or somethin)
 say "Configuring autologin and passwordless sudo"
 sudo mkdir -p /etc/sddm.conf.d
-echo -e "[Autologin]\nUser=$USER\nSession=plasma" | sudo tee /etc/sddm.conf.d/autologin.conf >/dev/null  # Auto-login
-echo "$USER ALL=(ALL:ALL) NOPASSWD: ALL" | sudo tee /etc/sudoers.d/nopasswd >/dev/null  # Passwordless sudo
+echo -e "[Autologin]\nUser=$REAL_USER\nSession=plasma" | sudo tee /etc/sddm.conf.d/autologin.conf >/dev/null  # Auto-login
+echo "$REAL_USER ALL=(ALL:ALL) NOPASSWD: ALL" | sudo tee /etc/sudoers.d/nopasswd >/dev/null  # Passwordless sudo
 
 # 1. System Update
 say "Updating system packages"
@@ -46,8 +49,8 @@ sudo apt update >> "$LOG" 2>&1
 # 4. Fish Shell
 say "Installing Fish shell"
 sudo apt install -y fish >> "$LOG" 2>&1
-sudo chsh -s /usr/bin/fish "$USER" >> "$LOG" 2>&1
-say "Fish is now your default shell. It takes effect on next login/restart."
+sudo chsh -s /usr/bin/fish "$REAL_USER" >> "$LOG" 2>&1
+status "Fish is now your default shell. It takes effect on next login/restart."
 
 # 5. AMD GPU / Vulkan
 say "Installing AMD GPU / Vulkan drivers"
@@ -59,7 +62,8 @@ sudo dpkg --add-architecture i386 >> "$LOG" 2>&1
 sudo apt update >> "$LOG" 2>&1
 sudo apt install -y mesa-vulkan-drivers:i386 libglx-mesa0:i386 mesa-vulkan-drivers:i386 libgl1-mesa-dri:i386 >> "$LOG" 2>&1
 
-# 7. Installing Apps 
+# 7. Installing libraries, services and apps
+say "Installing libraries and services"
 sudo apt install -y pipewire pipewire-audio pipewire-pulse wireplumber bluetooth bluez >> "$LOG" 2>&1
 sudo systemctl enable --now bluetooth >> "$LOG" 2>&1
 sudo apt install -y libavcodec-extra gstreamer1.0-plugins-bad gstreamer1.0-plugins-ugly ffmpeg >> "$LOG" 2>&1
@@ -68,6 +72,7 @@ sudo apt install -y mpv vlc obs-studio unrar curl wget firefox-esr cifs-utils ls
 sudo apt install -y git python3-pip python3-venv pipx build-essential gdb cmake >> "$LOG" 2>&1
 pipx ensurepath >> "$LOG" 2>&1
 
+say "Installing apps:"
 if curl -fsSL https://tailscale.com/install.sh | sh >> "$LOG" 2>&1; then
     sudo systemctl enable tailscaled >> "$LOG" 2>&1
     status "Tailscale installed successfully"
@@ -91,10 +96,10 @@ else
 fi
 
 CURSOR_VER=$(curl -s "https://api2.cursor.sh/updates/latest?platform=linux-x64-deb" | grep -oP '"version":"\K[^"]+')
-if [[ -n "$CURSOR_VER" ]] && wget -qO "$TMPDIR/cursor.deb" "https://api2.cursor.sh/updates/download/golden/linux-x64-deb/cursor/$CURSOR_VER" && sudo DEBIAN_FRONTEND=noninteractive apt install -y "$TMPDIR/cursor.deb" >> "$LOG" 2>&1; then
+if wget -O "$TMPDIR/cursor.deb" "https://api2.cursor.sh/updates/download/golden/linux-x64-deb/cursor/$CURSOR_VER" >> "$LOG" 2>&1 && sudo DEBIAN_FRONTEND=noninteractive apt install -y "$TMPDIR/cursor.deb" >> "$LOG" 2>&1; then
     status "Cursor installed successfully"
 else
-    status "Cursor FAILED to install"
+    status "Cursor FAILED to install (download/install failed)"
     FAILED+=("cursor")
 fi
 
@@ -123,6 +128,7 @@ else
 fi
 
 # 8. Settings
+say "Applying system settings"
 kwriteconfig6 --file kwinrc --group NightColor --key Active true               
 kwriteconfig6 --file kwinrc --group NightColor --key Mode Constant             # Nightlight configuration
 kwriteconfig6 --file kwinrc --group NightColor --key NightTemperature 5300
@@ -131,12 +137,14 @@ kwriteconfig6 --file ksmserverrc --group General --key confirmLogout false
 
 # 9. Cleanup
 rm -rf "$TMPDIR" # remove the temporary directory
-[[ -f "$0" && "$0" == *.sh ]] && rm -- "$0"  # delete this script if ran as a file, but not if pasted into terminal (where $0 is /bin/bash)
+if [[ -f "$0" && "$0" == *.sh ]]; then
+    rm -- "$0" && say "Script file deleted: $0" || say "Failed to delete script file: $0" # delete the script file if ran as a file, but not if pasted into terminal (where $0 is /bin/bash)
+fi
 
 if [[ ${#FAILED[@]} -gt 0 ]]; then
-    status "These failed to install: ${FAILED[*]}"
+    say "These failed to install: ${FAILED[*]}"
     status "NOT rebooting. Check log: $LOG"
 else
-    status "Everything installed successfully. Rebooting..."
+    say "Everything installed successfully. Rebooting..."
     sudo reboot
 fi
