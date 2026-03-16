@@ -1,17 +1,18 @@
 #!/usr/bin/env bash
-# Usage: chmod +x setup.sh && ./setup.sh
+# Usage: chmod +x setup.sh && ./setup.sh   (or "bash setup.sh" if running from fish)
+[ -z "$BASH_VERSION" ] && bash # trying to enforce bash if running from fish or another shell but this doesnt work i think
 [[ -f "$0" && "$0" == *.sh ]] && chmod +x "$0" # doesnt really matter but just in case the script is run as a file, make it executable
 
-REAL_USER="${SUDO_USER:-$USER}"
-REAL_HOME=$(eval echo ~"$REAL_USER")
+REAL_USER="${SUDO_USER:-$USER}"  # get the real user name if running as sudo, otherwise use the current user
+REAL_HOME=$(eval echo ~"$REAL_USER")  
 LOG="$REAL_HOME/Desktop/setup-log-$(date '+%Y-%m-%d_%H-%M-%S').log"
-mkdir -p "$(dirname "$LOG")"
+mkdir -p "$(dirname "$LOG")"  # create the directory for the log file if it doesn't exist
 
 FAILED=()  # array to store the names of the packages that failed to install
 TMPDIR=$(mktemp -d)  # temporary directory to store the downloaded packages
 
-say() { echo -e "\n$*" | tee -a "$LOG"; }
-status() { echo "$*" | tee -a "$LOG"; }
+say() { echo -e "\n$*" | tee -a "$LOG"; } # print to screen and log file
+status() { echo "$*" | tee -a "$LOG"; } # same as above but no new line
 
 # 0. Autologon and removing sudo password cuz im sick of typing it every 5 seconds (u will still have to type if resuming from sleep or somethin)
 say "Configuring autologin and passwordless sudo"
@@ -71,7 +72,7 @@ pipx ensurepath >> "$LOG" 2>&1
 
 # 7. Installing apps
 CHOICES=$(whiptail --title "Choose Apps to Install" --checklist \
-"Use SPACE to toggle, ENTER to confirm:" 18 50 7 \
+"Use SPACE to toggle, ENTER to confirm:" 20 50 10 \
 "tailscale"   "Tailscale"              ON \
 "discord"     "Discord"                ON \
 "vscode"      "VS Code"                ON \
@@ -79,6 +80,9 @@ CHOICES=$(whiptail --title "Choose Apps to Install" --checklist \
 "jellyfin"    "Jellyfin Media Player"  ON \
 "heroic"      "Heroic Games Launcher"  ON \
 "localsend"   "LocalSend"              ON \
+"steam"       "Steam"                  ON \
+"lutris"      "Lutris"                 ON \
+"lazygit"     "Lazygit"                ON \
 3>&1 1>&2 2>&3)
 
 if [ $? -ne 0 ]; then
@@ -151,6 +155,37 @@ else
         else
             status "LocalSend FAILED to install"
             FAILED+=("localsend")
+        fi
+    fi
+
+    if [[ "$CHOICES" == *"steam"* ]]; then
+        if wget -qO "$TMPDIR/steam.deb" "https://cdn.akamai.steamstatic.com/client/installer/steam.deb" && sudo DEBIAN_FRONTEND=noninteractive apt install -y "$TMPDIR/steam.deb" >> "$LOG" 2>&1; then
+            status "Steam installed successfully"
+        else
+            status "Steam FAILED to install"
+            FAILED+=("steam")
+        fi
+    fi
+
+    if [[ "$CHOICES" == *"lutris"* ]]; then
+        LUTRIS_DEB_URL=$(curl -s "https://api.github.com/repos/lutris/lutris/releases/latest" | grep browser_download_url | grep '_all.deb' | grep -oP 'https://[^"]+')
+        if [[ -n "$LUTRIS_DEB_URL" ]] && wget -qO "$TMPDIR/lutris.deb" "$LUTRIS_DEB_URL" && sudo DEBIAN_FRONTEND=noninteractive apt install -y "$TMPDIR/lutris.deb" >> "$LOG" 2>&1; then
+            status "Lutris installed successfully"
+        else
+            status "Lutris FAILED to install"
+            FAILED+=("lutris")
+        fi
+    fi
+
+    if [[ "$CHOICES" == *"lazygit"* ]]; then
+        LAZYGIT_VER=$(curl -s "https://api.github.com/repos/jesseduffield/lazygit/releases/latest" | grep -oP '"tag_name":\s*"v\K[^"]+')
+        if [[ -n "$LAZYGIT_VER" ]] \
+        && curl -Lo "$TMPDIR/lazygit.tar.gz" "https://github.com/jesseduffield/lazygit/releases/latest/download/lazygit_${LAZYGIT_VER}_Linux_x86_64.tar.gz" >> "$LOG" 2>&1 \
+        && tar xf "$TMPDIR/lazygit.tar.gz" -C "$TMPDIR" lazygit && sudo install "$TMPDIR/lazygit" /usr/local/bin/lazygit; then
+            status "Lazygit installed successfully"
+        else
+            status "Lazygit FAILED to install"
+            FAILED+=("lazygit")
         fi
     fi
 fi
