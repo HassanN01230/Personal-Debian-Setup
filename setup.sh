@@ -8,15 +8,31 @@ echo "$USER ALL=(ALL:ALL) NOPASSWD: ALL" | sudo tee /etc/sudoers.d/nopasswd  # P
 
 # 1. System Update
 echo -e "Updating system packages"
-sudo apt update && sudo apt upgrade -y
+sudo apt update 
+sudo apt install -y ntpsec-ntpdate
+sudo ntpdate pool.ntp.org
+sudo apt update 
+sudo apt upgrade -y
 
 # 2. Firmware & Essentials
 echo -e "Installing firmware and essentials"
 sudo apt install -y firmware-linux firmware-amd-graphics
 
-# 3. Enable Non-Free Repositories
+# 3. Enable Non-Free Repositories, hardcoded so no issue even if script ran multiple times
 echo -e "Enabling non-free repositories"
-sudo sed -i 's/^deb \(.*\) main\(.*\)$/deb \1 main contrib non-free non-free-firmware\2/' /etc/apt/sources.list
+sudo tee /etc/apt/sources.list > /dev/null << 'EOF'
+#deb cdrom:[Debian GNU/Linux 13.4.0 _Trixie_ - Official amd64 NETINST with firmware 20260314-11:53]/ trixie contrib main non-free-firmware
+deb http://deb.debian.org/debian/ trixie main contrib non-free non-free-firmware
+deb-src http://deb.debian.org/debian/ trixie main contrib non-free non-free-firmware
+
+deb http://security.debian.org/debian-security trixie-security main contrib non-free non-free-firmware
+deb-src http://security.debian.org/debian-security trixie-security main contrib non-free non-free-firmware
+
+# trixie-updates, to get updates before a point release is made;
+# see https://www.debian.org/doc/manuals/debian-reference/ch02.en.html#_updates_and_backports
+deb http://deb.debian.org/debian/ trixie-updates main contrib non-free non-free-firmware
+deb-src http://deb.debian.org/debian/ trixie-updates main contrib non-free non-free-firmware
+EOF
 sudo apt update
 
 # 4. Fish Shell
@@ -39,7 +55,7 @@ sudo apt install -y mesa-vulkan-drivers libglx-mesa0:i386 mesa-vulkan-drivers:i3
 sudo apt install -y pipewire pipewire-audio pipewire-pulse wireplumber bluetooth bluez
 sudo systemctl enable --now bluetooth
 sudo apt install -y libavcodec-extra gstreamer1.0-plugins-bad gstreamer1.0-plugins-ugly ffmpeg
-sudo apt install -y mpv vlc obs-studio unrar wget firefox-esr
+sudo apt install -y mpv vlc obs-studio unrar curl wget firefox-esr cifs-utils
 
 sudo apt install -y git python3-pip python3-venv pipx build-essential gdb cmake
 pipx ensurepath
@@ -47,9 +63,9 @@ pipx ensurepath
 curl -fsSL https://tailscale.com/install.sh | sh
 sudo systemctl enable tailscaled
 
-wget https://github.com/jellyfin/jellyfin-desktop/releases/download/v1.12.0/jellyfin-media-player_1.12.0-trixie.deb  # Have to change to flatpak so no static url
-sudo DEBIAN_FRONTEND=noninteractive apt install ./jellyfin-media-player_1.12.0-trixie.deb
-sudo rm jellyfin-media-player_1.12.0-trixie.deb
+wget -O jellyfin_client.deb https://github.com/jellyfin/jellyfin-desktop/releases/download/v1.12.0/jellyfin-media-player_1.12.0-trixie.deb  # Have to change to flatpak so no static url
+sudo DEBIAN_FRONTEND=noninteractive apt install -y ./jellyfin_client.deb
+sudo rm jellyfin_client.deb
 
 wget -O discord.deb "https://discord.com/api/download?platform=linux&format=deb"
 sudo DEBIAN_FRONTEND=noninteractive apt install -y ./discord.deb
@@ -63,6 +79,12 @@ CURSOR_VER=$(curl -s "https://api2.cursor.sh/updates/latest?platform=linux-x64-d
 wget -O cursor.deb "https://api2.cursor.sh/updates/download/golden/linux-x64-deb/cursor/$CURSOR_VER"
 sudo DEBIAN_FRONTEND=noninteractive apt install -y ./cursor.deb
 sudo rm cursor.deb
+
+# HEROIC_DEB_URL=$(curl -s "https://api.github.com/repos/Heroic-Games-Launcher/HeroicGamesLauncher/releases/latest" | grep -oP '"browser_download_url":"\K[^"]+linux-amd64\.deb')
+# wget -O heroic.deb "$HEROIC_DEB_URL"
+wget -O heroic.deb "https://github.com/Heroic-Games-Launcher/HeroicGamesLauncher/releases/download/v2.20.1/Heroic-2.20.1-linux-amd64.deb"
+sudo DEBIAN_FRONTEND=noninteractive apt install -y ./heroic.deb
+sudo rm heroic.deb
 
 # 8. Nightlight settings
 kwriteconfig6 --file kwinrc --group NightColor --key Active true
