@@ -52,17 +52,14 @@ sudo apt install -y fish >> "$LOG" 2>&1
 sudo chsh -s /usr/bin/fish "$REAL_USER" >> "$LOG" 2>&1
 status "Fish is now your default shell. It takes effect on next login/restart."
 
-# 5. AMD GPU / Vulkan
-say "Installing AMD GPU / Vulkan drivers"
+# 5. AMD GPU / Vulkan + 32-bit libraries
+say "Installing AMD GPU / Vulkan drivers and 32-bit libraries"
 sudo apt install -y mesa-vulkan-drivers libvulkan1 vulkan-tools mesa-utils >> "$LOG" 2>&1
-
-# 6. 32-bit libraries
-say "32-bit Vulkan libraries"
 sudo dpkg --add-architecture i386 >> "$LOG" 2>&1
 sudo apt update >> "$LOG" 2>&1
-sudo apt install -y mesa-vulkan-drivers:i386 libglx-mesa0:i386 mesa-vulkan-drivers:i386 libgl1-mesa-dri:i386 >> "$LOG" 2>&1
+sudo apt install -y mesa-vulkan-drivers:i386 libglx-mesa0:i386 mesa-vulkan-drivers:i386 libgl1-mesa-dri:i386 >> "$LOG" 2>&1 # 32-bit Vulkan libraries
 
-# 7. Installing libraries, services and apps
+# 6. Installing libraries and services
 say "Installing libraries and services"
 sudo apt install -y pipewire pipewire-audio pipewire-pulse wireplumber bluetooth bluez >> "$LOG" 2>&1
 sudo systemctl enable --now bluetooth >> "$LOG" 2>&1
@@ -72,59 +69,90 @@ sudo apt install -y mpv vlc obs-studio unrar curl wget firefox-esr cifs-utils ls
 sudo apt install -y git python3-pip python3-venv pipx build-essential gdb cmake >> "$LOG" 2>&1
 pipx ensurepath >> "$LOG" 2>&1
 
-say "Installing apps:"
-if curl -fsSL https://tailscale.com/install.sh | sh >> "$LOG" 2>&1; then
-    sudo systemctl enable tailscaled >> "$LOG" 2>&1
-    status "Tailscale installed successfully"
-else
-    status "Tailscale FAILED to install"
-    FAILED+=("tailscale")
-fi
+# 7. Installing apps
+CHOICES=$(whiptail --title "Choose Apps to Install" --checklist \
+"Use SPACE to toggle, ENTER to confirm:" 18 50 7 \
+"tailscale"   "Tailscale"              ON \
+"discord"     "Discord"                ON \
+"vscode"      "VS Code"                ON \
+"cursor"      "Cursor"                 ON \
+"jellyfin"    "Jellyfin Media Player"  ON \
+"heroic"      "Heroic Games Launcher"  ON \
+"localsend"   "LocalSend"              ON \
+3>&1 1>&2 2>&3)
 
-if wget -qO "$TMPDIR/discord.deb" "https://discord.com/api/download?platform=linux&format=deb" && sudo DEBIAN_FRONTEND=noninteractive apt install -y "$TMPDIR/discord.deb" >> "$LOG" 2>&1; then
-    status "Discord installed successfully"
+if [ $? -ne 0 ]; then
+    say "App selection cancelled, skipping app installs."
 else
-    status "Discord FAILED to install"
-    FAILED+=("discord")
-fi
+    say "Installing apps:"
 
-if wget -qO "$TMPDIR/vscode.deb" "https://code.visualstudio.com/sha/download?build=stable&os=linux-deb-x64" && sudo DEBIAN_FRONTEND=noninteractive apt install -y "$TMPDIR/vscode.deb" >> "$LOG" 2>&1; then
-    status "VS Code installed successfully"
-else
-    status "VS Code FAILED to install"
-    FAILED+=("vscode")
-fi
+    if [[ "$CHOICES" == *"tailscale"* ]]; then
+        if curl -fsSL https://tailscale.com/install.sh | sh >> "$LOG" 2>&1; then
+            sudo systemctl enable tailscaled >> "$LOG" 2>&1
+            status "Tailscale installed successfully"
+        else
+            status "Tailscale FAILED to install"
+            FAILED+=("tailscale")
+        fi
+    fi
 
-CURSOR_VER=$(curl -s "https://api2.cursor.sh/updates/latest?platform=linux-x64-deb" | grep -oP '"version":"\K[^"]+')
-if wget -O "$TMPDIR/cursor.deb" "https://api2.cursor.sh/updates/download/golden/linux-x64-deb/cursor/$CURSOR_VER" >> "$LOG" 2>&1 && sudo DEBIAN_FRONTEND=noninteractive apt install -y "$TMPDIR/cursor.deb" >> "$LOG" 2>&1; then
-    status "Cursor installed successfully"
-else
-    status "Cursor FAILED to install (download/install failed)"
-    FAILED+=("cursor")
-fi
+    if [[ "$CHOICES" == *"discord"* ]]; then
+        if wget -qO "$TMPDIR/discord.deb" "https://discord.com/api/download?platform=linux&format=deb" && sudo DEBIAN_FRONTEND=noninteractive apt install -y "$TMPDIR/discord.deb" >> "$LOG" 2>&1; then
+            status "Discord installed successfully"
+        else
+            status "Discord FAILED to install"
+            FAILED+=("discord")
+        fi
+    fi
 
-JELLYFIN_DEB_URL=$(curl -s "https://api.github.com/repos/jellyfin/jellyfin-desktop/releases/latest" | grep browser_download_url | grep "$DEBIAN_CODENAME" | grep -oP 'https://[^"]+')  # jellyfin url needs different grep for each debian release so getting codename dynamically to future proof it
-if [[ -n "$JELLYFIN_DEB_URL" ]] && wget -qO "$TMPDIR/jellyfin.deb" "$JELLYFIN_DEB_URL" && sudo DEBIAN_FRONTEND=noninteractive apt install -y "$TMPDIR/jellyfin.deb" >> "$LOG" 2>&1; then
-    status "Jellyfin Desktop installed successfully"
-else
-    status "Jellyfin Desktop FAILED to install"
-    FAILED+=("jellyfin-desktop")
-fi
+    if [[ "$CHOICES" == *"vscode"* ]]; then
+        if wget -qO "$TMPDIR/vscode.deb" "https://code.visualstudio.com/sha/download?build=stable&os=linux-deb-x64" && sudo DEBIAN_FRONTEND=noninteractive apt install -y "$TMPDIR/vscode.deb" >> "$LOG" 2>&1; then
+            status "VS Code installed successfully"
+        else
+            status "VS Code FAILED to install"
+            FAILED+=("vscode")
+        fi
+    fi
 
-HEROIC_DEB_URL=$(curl -s "https://api.github.com/repos/Heroic-Games-Launcher/HeroicGamesLauncher/releases/latest" | grep browser_download_url | grep linux-amd64.deb | grep -oP 'https://[^"]+')
-if [[ -n "$HEROIC_DEB_URL" ]] && wget -qO "$TMPDIR/heroic.deb" "$HEROIC_DEB_URL" && sudo DEBIAN_FRONTEND=noninteractive apt install -y "$TMPDIR/heroic.deb" >> "$LOG" 2>&1; then
-    status "Heroic installed successfully"
-else
-    status "Heroic FAILED to install"
-    FAILED+=("heroic")
-fi
+    if [[ "$CHOICES" == *"cursor"* ]]; then
+        CURSOR_VER=$(curl -s "https://api2.cursor.sh/updates/latest?platform=linux-x64-deb" | grep -oP '"version":"\K[^"]+')
+        if wget -O "$TMPDIR/cursor.deb" "https://api2.cursor.sh/updates/download/golden/linux-x64-deb/cursor/$CURSOR_VER" >> "$LOG" 2>&1 && sudo DEBIAN_FRONTEND=noninteractive apt install -y "$TMPDIR/cursor.deb" >> "$LOG" 2>&1; then
+            status "Cursor installed successfully"
+        else
+            status "Cursor FAILED to install (download/install failed)"
+            FAILED+=("cursor")
+        fi
+    fi
 
-LOCALSEND_DEB_URL=$(curl -s "https://api.github.com/repos/localsend/localsend/releases/latest" | grep browser_download_url | grep linux-x86-64.deb | grep -oP 'https://[^"]+')
-if [[ -n "$LOCALSEND_DEB_URL" ]] && wget -qO "$TMPDIR/localsend.deb" "$LOCALSEND_DEB_URL" && sudo DEBIAN_FRONTEND=noninteractive apt install -y "$TMPDIR/localsend.deb" >> "$LOG" 2>&1; then
-    status "LocalSend installed successfully"
-else
-    status "LocalSend FAILED to install"
-    FAILED+=("localsend")
+    if [[ "$CHOICES" == *"jellyfin"* ]]; then
+        JELLYFIN_DEB_URL=$(curl -s "https://api.github.com/repos/jellyfin/jellyfin-desktop/releases/latest" | grep browser_download_url | grep "$DEBIAN_CODENAME" | grep -oP 'https://[^"]+')  # jellyfin url needs different grep for each debian release so getting codename dynamically to future proof it
+        if [[ -n "$JELLYFIN_DEB_URL" ]] && wget -qO "$TMPDIR/jellyfin.deb" "$JELLYFIN_DEB_URL" && sudo DEBIAN_FRONTEND=noninteractive apt install -y "$TMPDIR/jellyfin.deb" >> "$LOG" 2>&1; then
+            status "Jellyfin Desktop installed successfully"
+        else
+            status "Jellyfin Desktop FAILED to install"
+            FAILED+=("jellyfin-desktop")
+        fi
+    fi
+
+    if [[ "$CHOICES" == *"heroic"* ]]; then
+        HEROIC_DEB_URL=$(curl -s "https://api.github.com/repos/Heroic-Games-Launcher/HeroicGamesLauncher/releases/latest" | grep browser_download_url | grep linux-amd64.deb | grep -oP 'https://[^"]+')
+        if [[ -n "$HEROIC_DEB_URL" ]] && wget -qO "$TMPDIR/heroic.deb" "$HEROIC_DEB_URL" && sudo DEBIAN_FRONTEND=noninteractive apt install -y "$TMPDIR/heroic.deb" >> "$LOG" 2>&1; then
+            status "Heroic installed successfully"
+        else
+            status "Heroic FAILED to install"
+            FAILED+=("heroic")
+        fi
+    fi
+
+    if [[ "$CHOICES" == *"localsend"* ]]; then
+        LOCALSEND_DEB_URL=$(curl -s "https://api.github.com/repos/localsend/localsend/releases/latest" | grep browser_download_url | grep linux-x86-64.deb | grep -oP 'https://[^"]+')
+        if [[ -n "$LOCALSEND_DEB_URL" ]] && wget -qO "$TMPDIR/localsend.deb" "$LOCALSEND_DEB_URL" && sudo DEBIAN_FRONTEND=noninteractive apt install -y "$TMPDIR/localsend.deb" >> "$LOG" 2>&1; then
+            status "LocalSend installed successfully"
+        else
+            status "LocalSend FAILED to install"
+            FAILED+=("localsend")
+        fi
+    fi
 fi
 
 # 8. Settings
