@@ -12,7 +12,7 @@ FAILED=()  # array to store the names of the packages that failed to install
 TMPDIR=$(mktemp -d)  # temporary directory to store the downloaded packages
 
 say() { echo -e "\n$*" | tee -a "$LOG"; } # print to screen and log file
-status() { echo "$*" | tee -a "$LOG"; } # same as above but no new line
+say_dont_skip_line() { echo "$*" | tee -a "$LOG"; } # same as above but no new line
 
 # 0. Autologon and removing sudo password cuz im sick of typing it every 5 seconds (u will still have to type if resuming from sleep or somethin)
 say "Configuring autologin and passwordless sudo"
@@ -51,17 +51,17 @@ sudo apt update >> "$LOG" 2>&1
 say "Installing Fish shell"
 sudo apt install -y fish >> "$LOG" 2>&1
 sudo chsh -s /usr/bin/fish "$REAL_USER" >> "$LOG" 2>&1
-status "Fish is now your default shell. It takes effect on next login/restart."
+say_dont_skip_line "Fish is now your default shell. It takes effect on next login/restart."
 
 # 5. AMD GPU / Vulkan + 32-bit libraries
-say "Installing AMD GPU / Vulkan drivers and 32-bit libraries"
+say "Installing AMD GPU/Vulkan drivers + 32-bit libraries"
 sudo apt install -y mesa-vulkan-drivers libvulkan1 vulkan-tools mesa-utils >> "$LOG" 2>&1
 sudo dpkg --add-architecture i386 >> "$LOG" 2>&1
 sudo apt update >> "$LOG" 2>&1
 sudo apt install -y mesa-vulkan-drivers:i386 libglx-mesa0:i386 mesa-vulkan-drivers:i386 libgl1-mesa-dri:i386 >> "$LOG" 2>&1 # 32-bit Vulkan libraries
 
-# 6. Installing libraries and services
-say "Installing libraries and services"
+# 6. Installing utilities + services
+say "Installing utilities + services"
 sudo apt install -y pipewire pipewire-audio pipewire-pulse wireplumber bluetooth bluez >> "$LOG" 2>&1
 sudo systemctl enable --now bluetooth >> "$LOG" 2>&1
 sudo apt install -y libavcodec-extra gstreamer1.0-plugins-bad gstreamer1.0-plugins-ugly ffmpeg >> "$LOG" 2>&1
@@ -87,6 +87,8 @@ CHOICES=$(whiptail --title "Choose Apps to Install" --checklist \
 
 if [ $? -ne 0 ]; then
     say "App selection cancelled, skipping app installs."
+elif [ -z "$CHOICES" ]; then
+    say "No apps selected, skipping app installs."
 else
     APPS_LIST=$(echo "$CHOICES" | sed 's/" "/", /g' | tr -d '"')
     say "Installing apps: $APPS_LIST"
@@ -94,27 +96,27 @@ else
     if [[ "$CHOICES" == *"Tailscale"* ]]; then
         if curl -fsSL https://tailscale.com/install.sh | sh >> "$LOG" 2>&1; then
             sudo systemctl enable tailscaled >> "$LOG" 2>&1
-            status "Tailscale installed successfully"
+            say_dont_skip_line "Tailscale installed successfully"
         else
-            status "Tailscale FAILED to install"
+            say_dont_skip_line "Tailscale FAILED to install"
             FAILED+=("tailscale")
         fi
     fi
 
     if [[ "$CHOICES" == *"Discord"* ]]; then
         if wget -qO "$TMPDIR/discord.deb" "https://discord.com/api/download?platform=linux&format=deb" && sudo DEBIAN_FRONTEND=noninteractive apt install -y "$TMPDIR/discord.deb" >> "$LOG" 2>&1; then
-            status "Discord installed successfully"
+            say_dont_skip_line "Discord installed successfully"
         else
-            status "Discord FAILED to install"
+            say_dont_skip_line "Discord FAILED to install"
             FAILED+=("discord")
         fi
     fi
 
     if [[ "$CHOICES" == *"Vscode"* ]]; then
         if wget -qO "$TMPDIR/vscode.deb" "https://code.visualstudio.com/sha/download?build=stable&os=linux-deb-x64" && sudo DEBIAN_FRONTEND=noninteractive apt install -y "$TMPDIR/vscode.deb" >> "$LOG" 2>&1; then
-            status "Vscode installed successfully"
+            say_dont_skip_line "Vscode installed successfully"
         else
-            status "Vscode FAILED to install"
+            say_dont_skip_line "Vscode FAILED to install"
             FAILED+=("vscode")
         fi
     fi
@@ -122,9 +124,9 @@ else
     if [[ "$CHOICES" == *"Cursor"* ]]; then
         CURSOR_VER=$(curl -s "https://api2.cursor.sh/updates/latest?platform=linux-x64-deb" | grep -oP '"version":"\K[^"]+')
         if wget -O "$TMPDIR/cursor.deb" "https://api2.cursor.sh/updates/download/golden/linux-x64-deb/cursor/$CURSOR_VER" >> "$LOG" 2>&1 && sudo DEBIAN_FRONTEND=noninteractive apt install -y "$TMPDIR/cursor.deb" >> "$LOG" 2>&1; then
-            status "Cursor installed successfully"
+            say_dont_skip_line "Cursor installed successfully"
         else
-            status "Cursor FAILED to install (download/install failed)"
+            say_dont_skip_line "Cursor FAILED to install (download/install failed)"
             FAILED+=("cursor")
         fi
     fi
@@ -132,9 +134,9 @@ else
     if [[ "$CHOICES" == *"Jellyfin Client"* ]]; then
         JELLYFIN_DEB_URL=$(curl -s "https://api.github.com/repos/jellyfin/jellyfin-desktop/releases/latest" | grep browser_download_url | grep "$DEBIAN_CODENAME" | grep -oP 'https://[^"]+')  # jellyfin url needs different grep for each debian release so getting codename dynamically to future proof it
         if [[ -n "$JELLYFIN_DEB_URL" ]] && wget -qO "$TMPDIR/jellyfin.deb" "$JELLYFIN_DEB_URL" && sudo DEBIAN_FRONTEND=noninteractive apt install -y "$TMPDIR/jellyfin.deb" >> "$LOG" 2>&1; then
-            status "Jellyfin Client installed successfully"
+            say_dont_skip_line "Jellyfin Client installed successfully"
         else
-            status "Jellyfin Client FAILED to install"
+            say_dont_skip_line "Jellyfin Client FAILED to install"
             FAILED+=("jellyfin-desktop")
         fi
     fi
@@ -142,9 +144,9 @@ else
     if [[ "$CHOICES" == *"Heroic Games Launcher"* ]]; then
         HEROIC_DEB_URL=$(curl -s "https://api.github.com/repos/Heroic-Games-Launcher/HeroicGamesLauncher/releases/latest" | grep browser_download_url | grep linux-amd64.deb | grep -oP 'https://[^"]+')
         if [[ -n "$HEROIC_DEB_URL" ]] && wget -qO "$TMPDIR/heroic.deb" "$HEROIC_DEB_URL" && sudo DEBIAN_FRONTEND=noninteractive apt install -y "$TMPDIR/heroic.deb" >> "$LOG" 2>&1; then
-            status "Heroic installed successfully"
+            say_dont_skip_line "Heroic installed successfully"
         else
-            status "Heroic FAILED to install"
+            say_dont_skip_line "Heroic FAILED to install"
             FAILED+=("heroic")
         fi
     fi
@@ -152,18 +154,18 @@ else
     if [[ "$CHOICES" == *"LocalSend"* ]]; then
         LOCALSEND_DEB_URL=$(curl -s "https://api.github.com/repos/localsend/localsend/releases/latest" | grep browser_download_url | grep linux-x86-64.deb | grep -oP 'https://[^"]+')
         if [[ -n "$LOCALSEND_DEB_URL" ]] && wget -qO "$TMPDIR/localsend.deb" "$LOCALSEND_DEB_URL" && sudo DEBIAN_FRONTEND=noninteractive apt install -y "$TMPDIR/localsend.deb" >> "$LOG" 2>&1; then
-            status "LocalSend installed successfully"
+            say_dont_skip_line "LocalSend installed successfully"
         else
-            status "LocalSend FAILED to install"
+            say_dont_skip_line "LocalSend FAILED to install"
             FAILED+=("localsend")
         fi
     fi
 
     if [[ "$CHOICES" == *"Steam"* ]]; then
         if wget -qO "$TMPDIR/steam.deb" "https://cdn.akamai.steamstatic.com/client/installer/steam.deb" && sudo DEBIAN_FRONTEND=noninteractive apt install -y "$TMPDIR/steam.deb" >> "$LOG" 2>&1; then
-            status "Steam installed successfully"
+            say_dont_skip_line "Steam installed successfully"
         else
-            status "Steam FAILED to install"
+            say_dont_skip_line "Steam FAILED to install"
             FAILED+=("steam")
         fi
     fi
@@ -171,9 +173,9 @@ else
     if [[ "$CHOICES" == *"Lutris"* ]]; then
         LUTRIS_DEB_URL=$(curl -s "https://api.github.com/repos/lutris/lutris/releases/latest" | grep browser_download_url | grep '_all.deb' | grep -oP 'https://[^"]+')
         if [[ -n "$LUTRIS_DEB_URL" ]] && wget -qO "$TMPDIR/lutris.deb" "$LUTRIS_DEB_URL" && sudo DEBIAN_FRONTEND=noninteractive apt install -y "$TMPDIR/lutris.deb" >> "$LOG" 2>&1; then
-            status "Lutris installed successfully"
+            say_dont_skip_line "Lutris installed successfully"
         else
-            status "Lutris FAILED to install"
+            say_dont_skip_line "Lutris FAILED to install"
             FAILED+=("lutris")
         fi
     fi
@@ -183,9 +185,9 @@ else
         if [[ -n "$LAZYGIT_VER" ]] \
         && curl -Lo "$TMPDIR/lazygit.tar.gz" "https://github.com/jesseduffield/lazygit/releases/latest/download/lazygit_${LAZYGIT_VER}_Linux_x86_64.tar.gz" >> "$LOG" 2>&1 \
         && tar xf "$TMPDIR/lazygit.tar.gz" -C "$TMPDIR" lazygit && sudo install "$TMPDIR/lazygit" /usr/local/bin/lazygit; then
-            status "Lazygit installed successfully"
+            say_dont_skip_line "Lazygit installed successfully"
         else
-            status "Lazygit FAILED to install"
+            say_dont_skip_line "Lazygit FAILED to install"
             FAILED+=("lazygit")
         fi
     fi
@@ -207,7 +209,7 @@ fi
 
 if [[ ${#FAILED[@]} -gt 0 ]]; then
     say "These failed to install: ${FAILED[*]}"
-    status "NOT rebooting. Check log: $LOG"
+    say_dont_skip_line "NOT rebooting. Check log: $LOG"
 else
     say "Everything installed successfully. Rebooting in 5 seconds..."
     sleep 5
