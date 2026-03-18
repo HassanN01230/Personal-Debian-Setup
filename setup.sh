@@ -1,11 +1,5 @@
 #!/usr/bin/env bash
 # Usage: chmod +x setup.sh && ./setup.sh   (or "bash setup.sh" if running from fish)
-
-# All of the dialog helpers in this script use kdialog (GUI) on KDE since its preinstalled, and whiptail (TUI) everywhere else
-# checklist: show_checklist "title" "text" "tag" "desc" "on/off" "tag2" "desc2" "on/off" ...
-# menu:      show_menu "title" "text" "tag" "desc" "tag2" "desc2" ...
-# msgbox:    show_msgbox "title" "text"
-
 [ -z "$BASH_VERSION" ] && bash # trying to enforce bash if running from fish or another shell but this doesnt work i think
 [[ -f "$0" && "$0" == *.sh ]] && chmod +x "$0" # doesnt really matter but just in case the script is run as a file, make it executable
 
@@ -21,14 +15,17 @@ TMPDIR=$(mktemp -d)  # temporary directory to store the downloaded packages
 say() { echo -e "\n$*" | tee -a "$LOG"; } # print to screen and log file
 say_dont_skip_line() { echo "$*" | tee -a "$LOG"; } # same as above but no new line
 
-# Get the user's desktop environment and set the appropriate value so that the correct type of dialog helper is used
+# dialog helpers — uses kdialog (GUI) on KDE since its preinstalled, whiptail (TUI) everywhere else
+# checklist: show_checklist "title" "text" "tag" "desc" "on/off" "tag2" "desc2" "on/off" ...
+# menu:      show_menu "title" "text" "tag" "desc" "tag2" "desc2" ...
+# msgbox:    show_msgbox "title" "text"
 if [[ -n "$DISPLAY" ]] && command -v kdialog &>/dev/null; then
     USE_KDIALOG=true
 else
     USE_KDIALOG=false
 fi
 
-show_checklist() { 
+show_checklist() {
     local title="$1" text="$2"
     shift 2
     if [[ "$USE_KDIALOG" == true ]]; then
@@ -50,7 +47,7 @@ show_menu() {
     local title="$1" text="$2"
     shift 2
     if [[ "$USE_KDIALOG" == true ]]; then
-        # kdialog only shows the label, not the tag — combine them so the app name is visible
+        # same fix — combine tag + description for display
         local args=()
         while [[ $# -ge 2 ]]; do
             args+=("$1" "$1 — $2")
@@ -64,7 +61,7 @@ show_menu() {
     fi
 }
 
-show_msgbox() { 
+show_msgbox() {
     local title="$1" text="$2"
     if [[ "$USE_KDIALOG" == true ]]; then
         # write to temp file and use --textbox for better text rendering and sizing
@@ -137,20 +134,18 @@ else
 fi
 say "Detected desktop environment: $DE"
 
-# 1. Detect GPU
+# 1. Detect GPU (AMD vs NVIDIA)
 if lspci | grep -qiE "VGA.*NVIDIA|3D.*NVIDIA"; then
     GPU="nvidia"
-elif lspci | grep -qiE "VGA.*AMD|VGA.*\bATI\b|3D.*AMD"; then  # for ATI, use \b to match the word "ATI" specifically since "ati" is a common substring
+elif lspci | grep -qiE "VGA.*AMD|VGA.*ATI|3D.*AMD"; then
     GPU="amd"
-elif lspci | grep -qiE "VGA.*Intel|3D.*Intel"; then
-    GPU="intel"
 else
     GPU="unknown"
 fi
 say "Detected GPU: $GPU"
 
 # 2. Detect device type (laptop vs desktop) for power/input settings
-if [[ -e /sys/class/power_supply/BAT0 ]] || [[ -e /sys/class/power_supply/BAT1 ]]; then # checks if a battery is present
+if [[ -e /sys/class/power_supply/BAT0 ]] || [[ -e /sys/class/power_supply/BAT1 ]]; then
     DEVICE_TYPE="laptop"
 else
     DEVICE_TYPE="desktop"
@@ -169,7 +164,7 @@ if [[ "$DE" == "kde" ]]; then
     ) || SCALE_CHOICE=""
 fi
 
-# 3. Autologon and removing sudo password cuz im sick of typing it every 5 seconds (u will still have to type if resuming from sleep or somethin)
+# 3. Autologon and removing sudo password + no lock on sleep
 say "[1/16] Configuring autologin and passwordless sudo"
 
 if [[ "$DE" == "kde" ]]; then
@@ -377,7 +372,6 @@ APP_CHOICES=$(show_checklist "Apps" "Select apps to install:" \
 "Flutter"           "Flutter SDK" off \
 "Android Studio"    "Android IDE" off \
 "Docker"            "Container engine" off \
-"Git"               "Version control" on \
 "Lazygit"           "Terminal git UI" off \
 "Qt Dev"            "Qt6 headers + tools" off \
 "DBeaver"           "Database manager (needs Java)" off \
@@ -405,7 +399,7 @@ APP_CHOICES=$(show_checklist "Apps" "Select apps to install:" \
 "LibreOffice Math"  "Math formulas" off \
 "LibreOffice Base"  "Database" off \
 "OnlyOffice"        "Office suite" off \
-"Vicinae"           "Local AI assistant" off \
+"Vicinae"           "Desktop launcher" off \
 "NoMachine"         "Remote desktop" off \
 "LocalSend"         "Local file sharing" on \
 "Tailscale"         "Mesh VPN" on \
@@ -442,10 +436,6 @@ fi
 
 # ---- Dev Tools installs ----
 
-if [[ "$APP_CHOICES" == *"Git"* ]]; then
-    # git is already installed in base utilities but making sure
-    sudo apt install -y git >> "$LOG" 2>&1 && say_dont_skip_line "Git installed successfully"
-fi
 
 if [[ "$APP_CHOICES" == *"Node.js"* ]]; then
     say_dont_skip_line "Installing Node.js via nvm"
@@ -462,6 +452,7 @@ if [[ "$APP_CHOICES" == *"Node.js"* ]]; then
 fi
 
 if [[ "$APP_CHOICES" == *"Java JDK"* ]]; then
+    say_dont_skip_line "Installing Java JDK..."
     if sudo apt install -y default-jdk >> "$LOG" 2>&1; then
         say_dont_skip_line "Java JDK installed successfully"
     else
@@ -471,6 +462,7 @@ if [[ "$APP_CHOICES" == *"Java JDK"* ]]; then
 fi
 
 if [[ "$APP_CHOICES" == *"VSCode"* ]]; then
+    say_dont_skip_line "Installing VSCode..."
     install_deb "VSCode" "https://code.visualstudio.com/sha/download?build=stable&os=linux-deb-x64" "vscode.deb"
 fi
 
@@ -487,6 +479,7 @@ if [[ "$APP_CHOICES" == *"VS Codium"* ]]; then
 fi
 
 if [[ "$APP_CHOICES" == *"Cursor"* ]]; then
+    say_dont_skip_line "Installing Cursor..."
     CURSOR_VER=$(curl -s "https://api2.cursor.sh/updates/latest?platform=linux-x64-deb" | grep -oP '"version":"\K[^"]+')
     if wget -O "$TMPDIR/cursor.deb" "https://api2.cursor.sh/updates/download/golden/linux-x64-deb/cursor/$CURSOR_VER" >> "$LOG" 2>&1 && sudo DEBIAN_FRONTEND=noninteractive apt install -y "$TMPDIR/cursor.deb" >> "$LOG" 2>&1; then
         say_dont_skip_line "Cursor installed successfully"
@@ -584,6 +577,7 @@ if [[ "$APP_CHOICES" == *"Docker"* ]]; then
 fi
 
 if [[ "$APP_CHOICES" == *"Lazygit"* ]]; then
+    say_dont_skip_line "Installing Lazygit..."
     LAZYGIT_VER=$(curl -s "https://api.github.com/repos/jesseduffield/lazygit/releases/latest" | grep -oP '"tag_name":\s*"v\K[^"]+')
     if [[ -n "$LAZYGIT_VER" ]] \
     && curl -Lo "$TMPDIR/lazygit.tar.gz" "https://github.com/jesseduffield/lazygit/releases/latest/download/lazygit_${LAZYGIT_VER}_Linux_x86_64.tar.gz" >> "$LOG" 2>&1 \
@@ -596,10 +590,12 @@ if [[ "$APP_CHOICES" == *"Lazygit"* ]]; then
 fi
 
 if [[ "$APP_CHOICES" == *"DBeaver"* ]]; then
+    say_dont_skip_line "Installing DBeaver..."
     install_deb "DBeaver" "https://dbeaver.io/files/dbeaver-ce_latest_amd64.deb" "dbeaver.deb"
 fi
 
 if [[ "$APP_CHOICES" == *"FileZilla"* ]]; then
+    say_dont_skip_line "Installing FileZilla..."
     if sudo apt install -y filezilla >> "$LOG" 2>&1; then
         say_dont_skip_line "FileZilla installed successfully"
     else
@@ -621,10 +617,12 @@ fi
 # ---- Media & Gaming installs ----
 
 if [[ "$APP_CHOICES" == *"Steam"* ]]; then
+    say_dont_skip_line "Installing Steam..."
     install_deb "Steam" "https://cdn.akamai.steamstatic.com/client/installer/steam.deb" "steam.deb"
 fi
 
 if [[ "$APP_CHOICES" == *"Lutris"* ]]; then
+    say_dont_skip_line "Installing Lutris..."
     LUTRIS_DEB_URL=$(curl -s "https://api.github.com/repos/lutris/lutris/releases/latest" | grep browser_download_url | grep '_all.deb' | grep -oP 'https://[^"]+')
     if [[ -n "$LUTRIS_DEB_URL" ]]; then
         install_deb "Lutris" "$LUTRIS_DEB_URL" "lutris.deb"
@@ -635,6 +633,7 @@ if [[ "$APP_CHOICES" == *"Lutris"* ]]; then
 fi
 
 if [[ "$APP_CHOICES" == *"Heroic"* ]]; then
+    say_dont_skip_line "Installing Heroic..."
     HEROIC_DEB_URL=$(curl -s "https://api.github.com/repos/Heroic-Games-Launcher/HeroicGamesLauncher/releases/latest" | grep browser_download_url | grep linux-amd64.deb | grep -oP 'https://[^"]+')
     if [[ -n "$HEROIC_DEB_URL" ]]; then
         install_deb "Heroic" "$HEROIC_DEB_URL" "heroic.deb"
@@ -645,6 +644,7 @@ if [[ "$APP_CHOICES" == *"Heroic"* ]]; then
 fi
 
 if [[ "$APP_CHOICES" == *"Jellyfin Client"* ]]; then
+    say_dont_skip_line "Installing Jellyfin Client..."
     JELLYFIN_DEB_URL=$(curl -s "https://api.github.com/repos/jellyfin/jellyfin-desktop/releases/latest" | grep browser_download_url | grep "$DEBIAN_CODENAME" | grep -oP 'https://[^"]+')  # jellyfin url needs different grep for each debian release so getting codename dynamically to future proof it
     if [[ -n "$JELLYFIN_DEB_URL" ]]; then
         install_deb "Jellyfin Client" "$JELLYFIN_DEB_URL" "jellyfin.deb"
@@ -690,10 +690,13 @@ if [[ "$APP_CHOICES" == *"Moonlight"* ]]; then
     MOONLIGHT_URL=$(curl -s "https://api.github.com/repos/moonlight-stream/moonlight-qt/releases/latest" | grep browser_download_url | grep 'x86_64.AppImage' | grep -oP 'https://[^"]+')
     if [[ -n "$MOONLIGHT_URL" ]] && wget -qO "$REAL_HOME/.local/bin/moonlight" "$MOONLIGHT_URL" >> "$LOG" 2>&1; then
         chmod +x "$REAL_HOME/.local/bin/moonlight"
+        mkdir -p "$REAL_HOME/.local/share/icons"
+        wget -qO "$REAL_HOME/.local/share/icons/moonlight.png" "https://raw.githubusercontent.com/moonlight-stream/moonlight-qt/master/app/res/moonlight.svg" >> "$LOG" 2>&1 || true
         cat > "$REAL_HOME/.local/share/applications/moonlight.desktop" << MOON_EOF
 [Desktop Entry]
 Name=Moonlight
 Exec=$REAL_HOME/.local/bin/moonlight
+Icon=$REAL_HOME/.local/share/icons/moonlight.png
 Type=Application
 Categories=Game;
 MOON_EOF
@@ -706,6 +709,7 @@ MOON_EOF
 fi
 
 if [[ "$APP_CHOICES" == *"OBS Studio"* ]]; then
+    say_dont_skip_line "Installing OBS Studio..."
     if sudo apt install -y obs-studio >> "$LOG" 2>&1; then
         say_dont_skip_line "OBS Studio installed successfully"
     else
@@ -715,10 +719,12 @@ if [[ "$APP_CHOICES" == *"OBS Studio"* ]]; then
 fi
 
 if [[ "$APP_CHOICES" == *"Discord"* ]]; then
+    say_dont_skip_line "Installing Discord..."
     install_deb "Discord" "https://discord.com/api/download?platform=linux&format=deb" "discord.deb"
 fi
 
 if [[ "$APP_CHOICES" == *"qBittorrent"* ]]; then
+    say_dont_skip_line "Installing qBittorrent..."
     if sudo apt install -y qbittorrent >> "$LOG" 2>&1; then
         say_dont_skip_line "qBittorrent installed successfully"
     else
@@ -728,6 +734,7 @@ if [[ "$APP_CHOICES" == *"qBittorrent"* ]]; then
 fi
 
 if [[ "$APP_CHOICES" == *"Audacity"* ]]; then
+    say_dont_skip_line "Installing Audacity..."
     if sudo apt install -y audacity >> "$LOG" 2>&1; then
         say_dont_skip_line "Audacity installed successfully"
     else
@@ -737,6 +744,7 @@ if [[ "$APP_CHOICES" == *"Audacity"* ]]; then
 fi
 
 if [[ "$APP_CHOICES" == *"Kdenlive"* ]]; then
+    say_dont_skip_line "Installing Kdenlive..."
     if sudo apt install -y kdenlive >> "$LOG" 2>&1; then
         say_dont_skip_line "Kdenlive installed successfully"
     else
@@ -746,6 +754,7 @@ if [[ "$APP_CHOICES" == *"Kdenlive"* ]]; then
 fi
 
 if [[ "$APP_CHOICES" == *"HandBrake"* ]]; then
+    say_dont_skip_line "Installing HandBrake..."
     if sudo apt install -y handbrake >> "$LOG" 2>&1; then
         say_dont_skip_line "HandBrake installed successfully"
     else
@@ -792,10 +801,12 @@ if [[ "$APP_CHOICES" == *"Brave"* ]]; then
 fi
 
 if [[ "$APP_CHOICES" == *"Google Chrome"* ]]; then
+    say_dont_skip_line "Installing Google Chrome..."
     install_deb "Google Chrome" "https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb" "chrome.deb"
 fi
 
 if [[ "$APP_CHOICES" == *"Obsidian"* ]]; then
+    say_dont_skip_line "Installing Obsidian..."
     OBSIDIAN_DEB_URL=$(curl -s "https://api.github.com/repos/obsidianmd/obsidian-releases/releases/latest" | grep browser_download_url | grep 'amd64.deb' | grep -oP 'https://[^"]+')
     if [[ -n "$OBSIDIAN_DEB_URL" ]]; then
         install_deb "Obsidian" "$OBSIDIAN_DEB_URL" "obsidian.deb"
@@ -806,22 +817,28 @@ if [[ "$APP_CHOICES" == *"Obsidian"* ]]; then
 fi
 
 if [[ "$APP_CHOICES" == *"LibreOffice Writer"* ]]; then
-    sudo apt install -y libreoffice-writer >> "$LOG" 2>&1 && say_dont_skip_line "LibreOffice Writer installed" || FAILED+=("libreoffice-writer")
+    say_dont_skip_line "Installing LibreOffice Writer..."
+    sudo apt install -y libreoffice-writer >> "$LOG" 2>&1 && say_dont_skip_line "LibreOffice Writer installed successfully" || FAILED+=("libreoffice-writer")
 fi
 if [[ "$APP_CHOICES" == *"LibreOffice Calc"* ]]; then
-    sudo apt install -y libreoffice-calc >> "$LOG" 2>&1 && say_dont_skip_line "LibreOffice Calc installed" || FAILED+=("libreoffice-calc")
+    say_dont_skip_line "Installing LibreOffice Calc..."
+    sudo apt install -y libreoffice-calc >> "$LOG" 2>&1 && say_dont_skip_line "LibreOffice Calc installed successfully" || FAILED+=("libreoffice-calc")
 fi
 if [[ "$APP_CHOICES" == *"LibreOffice Impress"* ]]; then
-    sudo apt install -y libreoffice-impress >> "$LOG" 2>&1 && say_dont_skip_line "LibreOffice Impress installed" || FAILED+=("libreoffice-impress")
+    say_dont_skip_line "Installing LibreOffice Impress..."
+    sudo apt install -y libreoffice-impress >> "$LOG" 2>&1 && say_dont_skip_line "LibreOffice Impress installed successfully" || FAILED+=("libreoffice-impress")
 fi
 if [[ "$APP_CHOICES" == *"LibreOffice Draw"* ]]; then
-    sudo apt install -y libreoffice-draw >> "$LOG" 2>&1 && say_dont_skip_line "LibreOffice Draw installed" || FAILED+=("libreoffice-draw")
+    say_dont_skip_line "Installing LibreOffice Draw..."
+    sudo apt install -y libreoffice-draw >> "$LOG" 2>&1 && say_dont_skip_line "LibreOffice Draw installed successfully" || FAILED+=("libreoffice-draw")
 fi
 if [[ "$APP_CHOICES" == *"LibreOffice Math"* ]]; then
-    sudo apt install -y libreoffice-math >> "$LOG" 2>&1 && say_dont_skip_line "LibreOffice Math installed" || FAILED+=("libreoffice-math")
+    say_dont_skip_line "Installing LibreOffice Math..."
+    sudo apt install -y libreoffice-math >> "$LOG" 2>&1 && say_dont_skip_line "LibreOffice Math installed successfully" || FAILED+=("libreoffice-math")
 fi
 if [[ "$APP_CHOICES" == *"LibreOffice Base"* ]]; then
-    sudo apt install -y libreoffice-base >> "$LOG" 2>&1 && say_dont_skip_line "LibreOffice Base installed" || FAILED+=("libreoffice-base")
+    say_dont_skip_line "Installing LibreOffice Base..."
+    sudo apt install -y libreoffice-base >> "$LOG" 2>&1 && say_dont_skip_line "LibreOffice Base installed successfully" || FAILED+=("libreoffice-base")
 fi
 
 if [[ "$APP_CHOICES" == *"Vicinae"* ]]; then
@@ -830,10 +847,13 @@ if [[ "$APP_CHOICES" == *"Vicinae"* ]]; then
     VICINAE_URL=$(curl -s "https://api.github.com/repos/vicinaehq/vicinae/releases/latest" | grep browser_download_url | grep 'x86_64.AppImage' | grep -oP 'https://[^"]+')
     if [[ -n "$VICINAE_URL" ]] && wget -qO "$REAL_HOME/.local/bin/vicinae" "$VICINAE_URL" >> "$LOG" 2>&1; then
         chmod +x "$REAL_HOME/.local/bin/vicinae"
+        mkdir -p "$REAL_HOME/.local/share/icons"
+        wget -qO "$REAL_HOME/.local/share/icons/vicinae.png" "https://raw.githubusercontent.com/vicinaehq/vicinae/main/extra/vicinae.png" >> "$LOG" 2>&1 || true
         cat > "$REAL_HOME/.local/share/applications/vicinae.desktop" << VICINAE_EOF
 [Desktop Entry]
 Name=Vicinae
 Exec=$REAL_HOME/.local/bin/vicinae
+Icon=$REAL_HOME/.local/share/icons/vicinae.png
 Type=Application
 Categories=Utility;
 VICINAE_EOF
@@ -846,20 +866,36 @@ VICINAE_EOF
 fi
 
 if [[ "$APP_CHOICES" == *"OnlyOffice"* ]]; then
+    say_dont_skip_line "Installing OnlyOffice..."
     install_deb "OnlyOffice" "https://github.com/ONLYOFFICE/DesktopEditors/releases/latest/download/onlyoffice-desktopeditors_amd64.deb" "onlyoffice.deb"
 fi
 
 if [[ "$APP_CHOICES" == *"NoMachine"* ]]; then
-    # URL has version number but NoMachine has a built-in updater
+    say_dont_skip_line "Installing NoMachine..."
     install_deb "NoMachine" "https://web9001.nomachine.com/download/9.3/Linux/nomachine_9.3.7_1_amd64.deb" "nomachine.deb"
 fi
 
 if [[ "$APP_CHOICES" == *"LocalSend"* ]]; then
-    LOCALSEND_DEB_URL=$(curl -s "https://api.github.com/repos/localsend/localsend/releases/latest" | grep browser_download_url | grep linux-x86-64.deb | grep -oP 'https://[^"]+')
-    if [[ -n "$LOCALSEND_DEB_URL" ]]; then
-        install_deb "LocalSend" "$LOCALSEND_DEB_URL" "localsend.deb"
+    say_dont_skip_line "Installing LocalSend..."
+    mkdir -p "$REAL_HOME/.local/bin" "$REAL_HOME/.local/share/applications"
+    LOCALSEND_URL=$(curl -s "https://api.github.com/repos/localsend/localsend/releases/latest" | grep browser_download_url | grep 'linux-x86-64.AppImage' | grep -oP 'https://[^"]+')
+    if [[ -n "$LOCALSEND_URL" ]] && wget -qO "$REAL_HOME/.local/bin/localsend" "$LOCALSEND_URL" >> "$LOG" 2>&1; then
+        chmod +x "$REAL_HOME/.local/bin/localsend"
+        # download icon
+        mkdir -p "$REAL_HOME/.local/share/icons"
+        wget -qO "$REAL_HOME/.local/share/icons/localsend.png" "https://raw.githubusercontent.com/localsend/localsend/main/app/assets/img/logo-512.png" >> "$LOG" 2>&1 || true
+        cat > "$REAL_HOME/.local/share/applications/localsend.desktop" << LSEND_EOF
+[Desktop Entry]
+Name=LocalSend
+Exec=$REAL_HOME/.local/bin/localsend
+Icon=$REAL_HOME/.local/share/icons/localsend.png
+Type=Application
+Categories=Network;
+LSEND_EOF
+        chown "$REAL_USER:$REAL_USER" "$REAL_HOME/.local/bin/localsend" "$REAL_HOME/.local/share/applications/localsend.desktop"
+        say_dont_skip_line "LocalSend installed successfully"
     else
-        say_dont_skip_line "LocalSend FAILED to install (could not find download URL)"
+        say_dont_skip_line "LocalSend FAILED to install"
         FAILED+=("localsend")
     fi
 fi
@@ -867,6 +903,7 @@ fi
 # ---- System & Utilities installs ----
 
 if [[ "$APP_CHOICES" == *"Tailscale"* ]]; then
+    say_dont_skip_line "Installing Tailscale..."
     if curl -fsSL https://tailscale.com/install.sh | sh >> "$LOG" 2>&1; then
         sudo systemctl enable tailscaled >> "$LOG" 2>&1
         say_dont_skip_line "Tailscale installed successfully"
@@ -931,14 +968,17 @@ if [[ "$APP_CHOICES" == *"Virt-manager"* ]]; then
 fi
 
 if [[ "$APP_CHOICES" == *"htop"* ]]; then
+    say_dont_skip_line "Installing htop..."
     sudo apt install -y htop >> "$LOG" 2>&1 && say_dont_skip_line "htop installed successfully"
 fi
 
 if [[ "$APP_CHOICES" == *"btop"* ]]; then
+    say_dont_skip_line "Installing btop..."
     sudo apt install -y btop >> "$LOG" 2>&1 && say_dont_skip_line "btop installed successfully"
 fi
 
 if [[ "$APP_CHOICES" == *"s3fs-fuse"* ]]; then
+    say_dont_skip_line "Installing s3fs-fuse..."
     if sudo apt install -y s3fs >> "$LOG" 2>&1; then
         say_dont_skip_line "s3fs-fuse installed successfully"
         # offer to set up S3 bucket mounts
@@ -961,7 +1001,7 @@ if [[ "$APP_CHOICES" == *"s3fs-fuse"* ]]; then
             chmod 600 "$S3_CRED_FILE"
 
             # build fstab entry
-            S3_OPTS="passwd_file=$S3_CRED_FILE,allow_other,use_path_request_style,uid=$(id -u $REAL_USER),gid=$(id -g $REAL_USER),_netdev,nofail"
+            S3_OPTS="passwd_file=$S3_CRED_FILE,allow_other,use_path_request_style,uid=$(id -u $REAL_USER),gid=$(id -g $REAL_USER),_netdev,nofail,x-systemd.automount,x-systemd.idle-timeout=0"
             if [[ -n "$S3_ENDPOINT" ]]; then
                 S3_OPTS="$S3_OPTS,url=$S3_ENDPOINT"
             fi
@@ -972,6 +1012,26 @@ if [[ "$APP_CHOICES" == *"s3fs-fuse"* ]]; then
 
             # mount it now
             sudo mount "$MOUNT_POINT" >> "$LOG" 2>&1 || true
+
+            # add to Dolphin sidebar under Remote
+            PLACES_FILE="$REAL_HOME/.local/share/user-places.xbel"
+            if [[ -f "$PLACES_FILE" ]]; then
+                sed -i "s|</xbel>||" "$PLACES_FILE"
+                sudo -u "$REAL_USER" bash -c "cat >> '$PLACES_FILE'" << S3_PLACES
+ <bookmark href="file://$MOUNT_POINT">
+  <title>S3: $S3_BUCKET</title>
+  <info>
+   <metadata owner="http://freedesktop.org">
+    <bookmark:icon name="folder-cloud"/>
+   </metadata>
+   <metadata owner="http://www.kde.org">
+    <IsSystemItem>true</IsSystemItem>
+   </metadata>
+  </info>
+ </bookmark>
+</xbel>
+S3_PLACES
+            fi
             say_dont_skip_line "S3 bucket $S3_BUCKET mounted at $MOUNT_POINT"
             POST_NOTES+=("S3 bucket: $S3_BUCKET mounted at ~/S3/$S3_BUCKET")
         done
@@ -982,6 +1042,7 @@ if [[ "$APP_CHOICES" == *"s3fs-fuse"* ]]; then
 fi
 
 if [[ "$APP_CHOICES" == *"lm-sensors"* ]]; then
+    say_dont_skip_line "Installing lm-sensors..."
     if sudo apt install -y lm-sensors >> "$LOG" 2>&1; then
         sudo sensors-detect --auto >> "$LOG" 2>&1 || true  # auto-detect sensor modules
         say_dont_skip_line "lm-sensors installed successfully"
@@ -992,6 +1053,7 @@ if [[ "$APP_CHOICES" == *"lm-sensors"* ]]; then
 fi
 
 if [[ "$APP_CHOICES" == *"psensor"* ]]; then
+    say_dont_skip_line "Installing psensor..."
     if sudo apt install -y psensor >> "$LOG" 2>&1; then
         say_dont_skip_line "psensor installed successfully"
     else
@@ -1001,6 +1063,7 @@ if [[ "$APP_CHOICES" == *"psensor"* ]]; then
 fi
 
 if [[ "$APP_CHOICES" == *"smartmontools"* ]]; then
+    say_dont_skip_line "Installing smartmontools..."
     if sudo apt install -y smartmontools >> "$LOG" 2>&1; then
         say_dont_skip_line "smartmontools installed successfully"
     else
@@ -1047,9 +1110,29 @@ CRED_EOF
 
     REAL_UID=$(id -u "$REAL_USER")
     REAL_GID=$(id -g "$REAL_USER")
-    echo "$SHARE_PATH $MOUNT_POINT cifs credentials=$CRED_FILE,uid=$REAL_UID,gid=$REAL_GID,iocharset=utf8,nofail,_netdev 0 0" | sudo tee -a /etc/fstab > /dev/null
+    echo "$SHARE_PATH $MOUNT_POINT cifs credentials=$CRED_FILE,uid=$REAL_UID,gid=$REAL_GID,iocharset=utf8,nofail,_netdev,x-systemd.automount,x-systemd.idle-timeout=0 0 0" | sudo tee -a /etc/fstab > /dev/null
 
     sudo mount "$MOUNT_POINT" >> "$LOG" 2>&1 || true
+
+    # add to Dolphin sidebar under Remote
+    PLACES_FILE="$REAL_HOME/.local/share/user-places.xbel"
+    if [[ -f "$PLACES_FILE" ]]; then
+        sed -i "s|</xbel>||" "$PLACES_FILE"
+        sudo -u "$REAL_USER" bash -c "cat >> '$PLACES_FILE'" << NET_PLACES
+ <bookmark href="file://$MOUNT_POINT">
+  <title>$SHARE_NAME</title>
+  <info>
+   <metadata owner="http://freedesktop.org">
+    <bookmark:icon name="network-server"/>
+   </metadata>
+   <metadata owner="http://www.kde.org">
+    <IsSystemItem>true</IsSystemItem>
+   </metadata>
+  </info>
+ </bookmark>
+</xbel>
+NET_PLACES
+    fi
     say_dont_skip_line "Network share $SHARE_PATH mounted at $MOUNT_POINT"
     POST_NOTES+=("Network share: $SHARE_PATH mounted at ~/Network/$SHARE_NAME")
 done
@@ -1065,8 +1148,8 @@ if [[ "$DE" == "kde" ]]; then
     KDE_CFG="$REAL_HOME/.config"
 
     say_dont_skip_line "Setting Breeze Dark theme..."
-    sudo -u "$REAL_USER" plasma-apply-lookandfeel -a org.kde.breezedark.desktop >> "$LOG" 2>&1 || \
-        sudo -u "$REAL_USER" lookandfeeltool -a org.kde.breezedark.desktop >> "$LOG" 2>&1 || true
+    timeout 10 sudo -u "$REAL_USER" plasma-apply-lookandfeel -a org.kde.breezedark.desktop >> "$LOG" 2>&1 || \
+        timeout 10 sudo -u "$REAL_USER" lookandfeeltool -a org.kde.breezedark.desktop >> "$LOG" 2>&1 || true
 
     # write KDE settings directly to config files to avoid kwriteconfig6 hanging issues
     say_dont_skip_line "Enabling night light (5300K)..."
@@ -1088,6 +1171,13 @@ ButtonsOnLeft=MFS
 ButtonsOnRight=IAX
 KWIN_BUTTONS
 
+    say_dont_skip_line "Disabling KDE Wallet popup..."
+    sudo -u "$REAL_USER" bash -c "cat >> '$KDE_CFG/kwalletrc'" << 'KWALLET'
+
+[Wallet]
+Enabled=false
+KWALLET
+
     say_dont_skip_line "Disabling logout confirmation..."
     sudo -u "$REAL_USER" bash -c "cat >> '$KDE_CFG/ksmserverrc'" << 'KSMSRV'
 
@@ -1097,37 +1187,66 @@ KSMSRV
 
     if [[ "$DEVICE_TYPE" == "laptop" ]]; then
         say_dont_skip_line "Enabling natural scrolling (laptop)..."
-        # KDE Wayland stores touchpad settings per-device using vendor/product IDs
-        # auto-detect the touchpad and set natural scroll for it
+        # detect touchpad NOW (we have root access) and bake values into autostart script
         sudo apt install -y libinput-tools >> "$LOG" 2>&1 || true
         TOUCHPAD_INFO=$(sudo libinput list-devices 2>/dev/null | grep -A5 -i touchpad | grep "Kernel:" | head -1 | awk '{print $2}')
         if [[ -n "$TOUCHPAD_INFO" ]]; then
-            # get vendor and product IDs from the device
-            TOUCHPAD_VENDOR=$(cat "$(dirname $(realpath /sys/class/input/$(basename $TOUCHPAD_INFO)/device))/id/vendor" 2>/dev/null)
-            TOUCHPAD_PRODUCT=$(cat "$(dirname $(realpath /sys/class/input/$(basename $TOUCHPAD_INFO)/device))/id/product" 2>/dev/null)
-            TOUCHPAD_NAME=$(sudo libinput list-devices 2>/dev/null | grep -B1 "$TOUCHPAD_INFO" | head -1 | sed 's/.*Device: *//')
-            if [[ -n "$TOUCHPAD_VENDOR" && -n "$TOUCHPAD_PRODUCT" && -n "$TOUCHPAD_NAME" ]]; then
-                # convert hex to decimal for KDE config
-                VENDOR_DEC=$((16#$TOUCHPAD_VENDOR))
-                PRODUCT_DEC=$((16#$TOUCHPAD_PRODUCT))
-                sudo -u "$REAL_USER" kwriteconfig6 --file kcminputrc \
-                    --group "Libinput" --group "$VENDOR_DEC" --group "$PRODUCT_DEC" --group "$TOUCHPAD_NAME" \
-                    --key NaturalScroll true
-                say_dont_skip_line "Natural scrolling enabled for $TOUCHPAD_NAME (takes effect after reboot)"
-            fi
+            EVENT_NAME=$(basename "$TOUCHPAD_INFO")
+            TP_VENDOR_HEX=$(cat /sys/class/input/$EVENT_NAME/device/id/vendor 2>/dev/null)
+            TP_PRODUCT_HEX=$(cat /sys/class/input/$EVENT_NAME/device/id/product 2>/dev/null)
+            TP_NAME=$(sudo libinput list-devices 2>/dev/null | grep -B1 "$TOUCHPAD_INFO" | head -1 | sed 's/.*Device: *//')
+            TP_VENDOR_DEC=$((16#$TP_VENDOR_HEX))
+            TP_PRODUCT_DEC=$((16#$TP_PRODUCT_HEX))
+            say_dont_skip_line "Found touchpad: $TP_NAME (vendor=$TP_VENDOR_DEC product=$TP_PRODUCT_DEC)"
+
+            # create autostart script with hardcoded values (no sudo needed at runtime)
+            mkdir -p "$REAL_HOME/.config/autostart" "$REAL_HOME/.local/bin"
+            cat > "$REAL_HOME/.config/autostart/apply-natural-scroll.desktop" << NS_DESKTOP
+[Desktop Entry]
+Type=Application
+Name=Apply Natural Scrolling
+Exec=$REAL_HOME/.local/bin/apply-natural-scroll.sh
+X-KDE-autostart-phase=2
+NS_DESKTOP
+            cat > "$REAL_HOME/.local/bin/apply-natural-scroll.sh" << NS_SCRIPT
+#!/bin/bash
+sleep 3
+kwriteconfig6 --file kcminputrc --group "Libinput" --group "$TP_VENDOR_DEC" --group "$TP_PRODUCT_DEC" --group "$TP_NAME" --key NaturalScroll true
+rm -f "\$HOME/.config/autostart/apply-natural-scroll.desktop"
+rm -f "\$HOME/.local/bin/apply-natural-scroll.sh"
+NS_SCRIPT
+            chmod +x "$REAL_HOME/.local/bin/apply-natural-scroll.sh"
+            chown "$REAL_USER:$REAL_USER" "$REAL_HOME/.config/autostart/apply-natural-scroll.desktop" "$REAL_HOME/.local/bin/apply-natural-scroll.sh"
+        else
+            say_dont_skip_line "No touchpad detected, skipping natural scrolling"
         fi
-        # also set the generic Touchpad group as fallback
-        sudo -u "$REAL_USER" kwriteconfig6 --file kcminputrc --group Touchpad --key NaturalScroll true 2>/dev/null || true
     fi
 
     # Display scaling — apply the choice made at the start of the script
     if [[ -n "$SCALE_CHOICE" ]]; then
         say_dont_skip_line "Setting display scaling to ${SCALE_CHOICE}x..."
-        # use kscreen-doctor to set per-output scaling (works on Wayland + persists via kscreen)
-        # strip ANSI color codes from kscreen-doctor output before parsing
-        for output_id in $(kscreen-doctor -o 2>&1 | sed 's/\x1b\[[0-9;]*m//g' | grep "Output:" | awk '{print $2}'); do
-            kscreen-doctor "output.$output_id.scale.$SCALE_CHOICE" >> "$LOG" 2>&1 || true
-        done
+        # kscreen-doctor needs the user's Wayland session which isnt available when running as root
+        # create a one-shot autostart script that applies scaling on first user login then deletes itself
+        mkdir -p "$REAL_HOME/.config/autostart"
+        cat > "$REAL_HOME/.config/autostart/apply-scaling.desktop" << SCALE_DESKTOP
+[Desktop Entry]
+Type=Application
+Name=Apply Display Scaling
+Exec=$REAL_HOME/.local/bin/apply-scaling.sh
+X-KDE-autostart-phase=2
+SCALE_DESKTOP
+        mkdir -p "$REAL_HOME/.local/bin"
+        cat > "$REAL_HOME/.local/bin/apply-scaling.sh" << SCALE_SCRIPT
+#!/bin/bash
+sleep 3
+for output_id in \$(kscreen-doctor -o 2>&1 | sed 's/\x1b\[[0-9;]*m//g' | grep "Output:" | awk '{print \$2}'); do
+    kscreen-doctor "output.\$output_id.scale.$SCALE_CHOICE" 2>/dev/null
+done
+rm -f "$REAL_HOME/.config/autostart/apply-scaling.desktop"
+rm -f "$REAL_HOME/.local/bin/apply-scaling.sh"
+SCALE_SCRIPT
+        chmod +x "$REAL_HOME/.local/bin/apply-scaling.sh"
+        chown -R "$REAL_USER:$REAL_USER" "$REAL_HOME/.config/autostart/apply-scaling.desktop" "$REAL_HOME/.local/bin/apply-scaling.sh"
         say_dont_skip_line "Display scaling set to ${SCALE_CHOICE}x"
     fi
 
@@ -1135,7 +1254,7 @@ KSMSRV
     # This adds a default panel to any monitor that doesnt already have one
     REAL_UID=$(id -u "$REAL_USER")
     sudo -u "$REAL_USER" DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$REAL_UID/bus" \
-        qdbus6 org.kde.plasmashell /PlasmaShell org.kde.PlasmaShell.evaluateScript '
+        timeout 10 qdbus6 org.kde.plasmashell /PlasmaShell org.kde.PlasmaShell.evaluateScript '
         var allScreens = desktops();
         for (var i = 0; i < allScreens.length; i++) {
             var screen = allScreens[i].screen;
@@ -1181,44 +1300,87 @@ DESKTOP_EOF
 
     # Populate taskbar — defaults + user picks from installed apps
     say_dont_skip_line "Configuring taskbar apps..."
-    TASKBAR_LAUNCHERS="applications:systemsettings.desktop,preferred://filemanager,applications:firefox-esr.desktop,applications:org.kde.konsole.desktop"
+    TASKBAR_LAUNCHERS="applications:systemsettings.desktop,applications:org.kde.plasma-systemmonitor.desktop,preferred://filemanager,applications:firefox-esr.desktop,applications:org.kde.konsole.desktop"
 
     # use .desktop filenames as tags so we get them back directly from the checklist
+    # use app name as tag (shown to user), map back to .desktop file after selection
     PIN_ARGS=()
-    [[ "$APP_CHOICES" == *"VSCode"* ]]        && PIN_ARGS+=("code.desktop" "VSCode" off)
-    [[ "$APP_CHOICES" == *"VS Codium"* ]]     && PIN_ARGS+=("codium.desktop" "VS Codium" off)
-    [[ "$APP_CHOICES" == *"Cursor"* ]]        && PIN_ARGS+=("cursor.desktop" "Cursor" off)
-    [[ "$APP_CHOICES" == *"Discord"* ]]       && PIN_ARGS+=("discord.desktop" "Discord" off)
-    [[ "$APP_CHOICES" == *"Steam"* ]]         && PIN_ARGS+=("steam.desktop" "Steam" off)
-    [[ "$APP_CHOICES" == *"Lutris"* ]]        && PIN_ARGS+=("net.lutris.Lutris.desktop" "Lutris" off)
-    [[ "$APP_CHOICES" == *"Heroic"* ]]        && PIN_ARGS+=("com.heroicgameslauncher.hgl.desktop" "Heroic" off)
-    [[ "$APP_CHOICES" == *"Jellyfin"* ]]      && PIN_ARGS+=("com.github.iwalton3.jellyfin-media-player.desktop" "Jellyfin" off)
-    [[ "$APP_CHOICES" == *"OBS Studio"* ]]    && PIN_ARGS+=("com.obsproject.Studio.desktop" "OBS Studio" off)
-    [[ "$APP_CHOICES" == *"Brave"* ]]         && PIN_ARGS+=("brave-browser.desktop" "Brave" off)
-    [[ "$APP_CHOICES" == *"Google Chrome"* ]] && PIN_ARGS+=("google-chrome.desktop" "Chrome" off)
-    [[ "$APP_CHOICES" == *"Zen Browser"* ]]   && PIN_ARGS+=("zen-browser.desktop" "Zen Browser" off)
-    [[ "$APP_CHOICES" == *"Obsidian"* ]]      && PIN_ARGS+=("obsidian.desktop" "Obsidian" off)
-    [[ "$APP_CHOICES" == *"LocalSend"* ]]     && PIN_ARGS+=("localsend_app.desktop" "LocalSend" off)
-    [[ "$APP_CHOICES" == *"FileZilla"* ]]     && PIN_ARGS+=("filezilla.desktop" "FileZilla" off)
-    [[ "$APP_CHOICES" == *"Kdenlive"* ]]      && PIN_ARGS+=("org.kde.kdenlive.desktop" "Kdenlive" off)
-    [[ "$APP_CHOICES" == *"qBittorrent"* ]]   && PIN_ARGS+=("org.qbittorrent.qBittorrent.desktop" "qBittorrent" off)
-    [[ "$APP_CHOICES" == *"NoMachine"* ]]     && PIN_ARGS+=("nomachine.desktop" "NoMachine" off)
+    declare -A PIN_MAP
+    add_pin() { PIN_ARGS+=("$1" "$2" off); PIN_MAP["$1"]="$2"; }
+
+    [[ "$APP_CHOICES" == *"VSCode"* ]]           && add_pin "VSCode" "code.desktop"
+    [[ "$APP_CHOICES" == *"VS Codium"* ]]        && add_pin "VS Codium" "codium.desktop"
+    [[ "$APP_CHOICES" == *"Cursor"* ]]           && add_pin "Cursor" "cursor.desktop"
+    [[ "$APP_CHOICES" == *"Android Studio"* ]]   && add_pin "Android Studio" "android-studio.desktop"
+    [[ "$APP_CHOICES" == *"DBeaver"* ]]          && add_pin "DBeaver" "dbeaver-ce.desktop"
+    [[ "$APP_CHOICES" == *"Discord"* ]]          && add_pin "Discord" "discord.desktop"
+    [[ "$APP_CHOICES" == *"Steam"* ]]            && add_pin "Steam" "steam.desktop"
+    [[ "$APP_CHOICES" == *"Lutris"* ]]           && add_pin "Lutris" "net.lutris.Lutris.desktop"
+    [[ "$APP_CHOICES" == *"Heroic"* ]]           && add_pin "Heroic" "heroic.desktop"
+    [[ "$APP_CHOICES" == *"Jellyfin"* ]]         && add_pin "Jellyfin" "com.github.iwalton3.jellyfin-media-player.desktop"
+    [[ "$APP_CHOICES" == *"Sunshine"* ]]         && add_pin "Sunshine" "dev.lizardbyte.app.Sunshine.desktop"
+    [[ "$APP_CHOICES" == *"Moonlight"* ]]        && add_pin "Moonlight" "moonlight.desktop"
+    [[ "$APP_CHOICES" == *"OBS Studio"* ]]       && add_pin "OBS Studio" "com.obsproject.Studio.desktop"
+    [[ "$APP_CHOICES" == *"Audacity"* ]]         && add_pin "Audacity" "audacity.desktop"
+    [[ "$APP_CHOICES" == *"Kdenlive"* ]]         && add_pin "Kdenlive" "org.kde.kdenlive.desktop"
+    [[ "$APP_CHOICES" == *"HandBrake"* ]]        && add_pin "HandBrake" "ghb.desktop"
+    [[ "$APP_CHOICES" == *"qBittorrent"* ]]      && add_pin "qBittorrent" "org.qbittorrent.qBittorrent.desktop"
+    [[ "$APP_CHOICES" == *"Brave"* ]]            && add_pin "Brave" "brave-browser.desktop"
+    [[ "$APP_CHOICES" == *"Google Chrome"* ]]    && add_pin "Chrome" "google-chrome.desktop"
+    [[ "$APP_CHOICES" == *"Zen Browser"* ]]      && add_pin "Zen Browser" "zen-browser.desktop"
+    [[ "$APP_CHOICES" == *"Obsidian"* ]]         && add_pin "Obsidian" "obsidian.desktop"
+    [[ "$APP_CHOICES" == *"OnlyOffice"* ]]       && add_pin "OnlyOffice" "onlyoffice-desktopeditors.desktop"
+    [[ "$APP_CHOICES" == *"Vicinae"* ]]          && add_pin "Vicinae" "vicinae.desktop"
+    [[ "$APP_CHOICES" == *"NoMachine"* ]]        && add_pin "NoMachine" "nomachine.desktop"
+    [[ "$APP_CHOICES" == *"LocalSend"* ]]        && add_pin "LocalSend" "localsend.desktop"
+    [[ "$APP_CHOICES" == *"FileZilla"* ]]        && add_pin "FileZilla" "filezilla.desktop"
 
     if [[ ${#PIN_ARGS[@]} -gt 0 ]]; then
-        PIN_CHOICES=$(show_checklist "Taskbar Apps" "Settings, Files, Firefox, Konsole are always pinned. Select additional apps:" "${PIN_ARGS[@]}") || true
+        PIN_CHOICES=$(show_checklist "Taskbar Apps" "Settings, System Monitor, Files, Firefox, Konsole are always pinned. Select additional apps:" "${PIN_ARGS[@]}") || true
         if [[ -n "$PIN_CHOICES" ]]; then
-            # PIN_CHOICES contains .desktop filenames since we used them as tags
-            for desktop_file in $(echo "$PIN_CHOICES" | tr -d '"'); do
-                TASKBAR_LAUNCHERS="$TASKBAR_LAUNCHERS,applications:$desktop_file"
+            # map app names back to .desktop filenames
+            for app_name in $(echo "$PIN_CHOICES" | tr -d '"'); do
+                desktop_file="${PIN_MAP[$app_name]}"
+                if [[ -n "$desktop_file" ]]; then
+                    TASKBAR_LAUNCHERS="$TASKBAR_LAUNCHERS,applications:$desktop_file"
+                fi
             done
         fi
     fi
 
-    PANEL_CFG="$KDE_CFG/plasma-org.kde.plasma.desktop-appletsrc"
-    if [[ -f "$PANEL_CFG" ]]; then
-        sed -i "s|^launchers=.*|launchers=$TASKBAR_LAUNCHERS|g" "$PANEL_CFG"
-        chown "$REAL_USER:$REAL_USER" "$PANEL_CFG"
+    # apply taskbar pins via autostart one-shot (panel config might not have launchers line yet)
+    mkdir -p "$REAL_HOME/.config/autostart" "$REAL_HOME/.local/bin"
+    cat > "$REAL_HOME/.config/autostart/apply-taskbar.desktop" << TASKBAR_DESKTOP
+[Desktop Entry]
+Type=Application
+Name=Apply Taskbar Pins
+Exec=$REAL_HOME/.local/bin/apply-taskbar.sh
+X-KDE-autostart-phase=2
+TASKBAR_DESKTOP
+    cat > "$REAL_HOME/.local/bin/apply-taskbar.sh" << TASKBAR_SCRIPT
+#!/bin/bash
+sleep 3
+CONFIG="\$HOME/.config/plasma-org.kde.plasma.desktop-appletsrc"
+LAUNCHERS="$TASKBAR_LAUNCHERS"
+if [[ -f "\$CONFIG" ]]; then
+    # remove any existing launchers line
+    sed -i '/^launchers=/d' "\$CONFIG"
+    # find the icontasks section header and add launchers under it
+    SECTION=\$(grep -B2 "plugin=org.kde.plasma.icontasks" "\$CONFIG" | grep '^\[Containments\]')
+    if [[ -n "\$SECTION" ]]; then
+        echo "" >> "\$CONFIG"
+        echo "\${SECTION}[Configuration][General]" >> "\$CONFIG"
+        echo "launchers=\${LAUNCHERS}" >> "\$CONFIG"
     fi
+    killall plasmashell
+    sleep 1
+    kstart plasmashell &
+fi
+rm -f "\$HOME/.config/autostart/apply-taskbar.desktop"
+rm -f "\$HOME/.local/bin/apply-taskbar.sh"
+TASKBAR_SCRIPT
+    chmod +x "$REAL_HOME/.local/bin/apply-taskbar.sh"
+    chown "$REAL_USER:$REAL_USER" "$REAL_HOME/.config/autostart/apply-taskbar.desktop" "$REAL_HOME/.local/bin/apply-taskbar.sh"
 
     # Power/sleep timers — write directly to config files since kwriteconfig6 nested groups are unreliable
     say_dont_skip_line "Setting power/sleep timers ($DEVICE_TYPE profile)..."
@@ -1233,6 +1395,8 @@ AutoSuspendIdleTimeoutSec=7200
 PowerButtonAction=1
 POWER_EOF
         sudo -u "$REAL_USER" kwriteconfig6 --file "$KDE_CFG/kscreenlockerrc" --group Daemon --key Timeout 30
+        sudo -u "$REAL_USER" kwriteconfig6 --file "$KDE_CFG/kscreenlockerrc" --group Daemon --key Autolock false
+        sudo -u "$REAL_USER" kwriteconfig6 --file "$KDE_CFG/kscreenlockerrc" --group Daemon --key LockOnResume false
     else
         sudo -u "$REAL_USER" tee "$KDE_CFG/powerdevilrc" > /dev/null << 'POWER_EOF'
 [AC][Display]
@@ -1256,7 +1420,7 @@ POWER_EOF
     say_dont_skip_line "Applying KDE config changes..."
     REAL_UID=$(id -u "$REAL_USER")
     sudo -u "$REAL_USER" DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$REAL_UID/bus" \
-        qdbus6 org.kde.KWin /KWin reconfigure >> "$LOG" 2>&1 || true
+        timeout 5 qdbus6 org.kde.KWin /KWin reconfigure >> "$LOG" 2>&1 || true
     say_dont_skip_line "done."
 
 elif [[ "$DE" == "gnome" || "$DE" == "cinnamon" ]]; then
@@ -1353,6 +1517,14 @@ show_msgbox "Post-Install Notes" "$(echo -e "$NOTES_TEXT")" || true
 # ==================================================================================
 say "[15/16] Cleaning up"
 rm -rf "$TMPDIR" # remove the temporary directory
+
+# ask user if they want to re-enable sudo password (recommended for security)
+if show_yesno "Security" "Remove passwordless sudo? (Recommended — you'll need to enter your password for sudo commands)"; then
+    sudo rm -f /etc/sudoers.d/nopasswd
+    say_dont_skip_line "Passwordless sudo removed. You will need to enter your password for sudo."
+else
+    say_dont_skip_line "Passwordless sudo kept."
+fi
 
 # remove the autostart entry so this script doesnt run again on next login
 say_dont_skip_line "Removing autostart entry..."
