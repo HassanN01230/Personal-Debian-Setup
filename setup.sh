@@ -1,7 +1,14 @@
 #!/usr/bin/env bash
 # Usage: chmod +x setup.sh && ./setup.sh   (or "bash setup.sh" if running from fish)
+
+# All of the dialog helpers in this script use kdialog (GUI) on KDE since its preinstalled, and whiptail (TUI) everywhere else
+# checklist: show_checklist "title" "text" "tag" "desc" "on/off" "tag2" "desc2" "on/off" ...
+# menu:      show_menu "title" "text" "tag" "desc" "tag2" "desc2" ...
+# msgbox:    show_msgbox "title" "text"
+
 [ -z "$BASH_VERSION" ] && bash # trying to enforce bash if running from fish or another shell but this doesnt work i think
 [[ -f "$0" && "$0" == *.sh ]] && chmod +x "$0" # doesnt really matter but just in case the script is run as a file, make it executable
+trap 'say "Script interrupted by user."; exit 130' INT # trap INT signal (Ctrl+C); if user presses Ctrl+C at any time, then this trap will be triggered and the script will exit with code 130
 
 REAL_USER="${SUDO_USER:-$USER}"  # get the real user name if running as sudo, otherwise use the current user
 REAL_HOME=$(eval echo ~"$REAL_USER")
@@ -15,17 +22,15 @@ TMPDIR=$(mktemp -d)  # temporary directory to store the downloaded packages
 say() { echo -e "\n$*" | tee -a "$LOG"; } # print to screen and log file
 say_dont_skip_line() { echo "$*" | tee -a "$LOG"; } # same as above but no new line
 
-# dialog helpers — uses kdialog (GUI) on KDE since its preinstalled, whiptail (TUI) everywhere else
-# checklist: show_checklist "title" "text" "tag" "desc" "on/off" "tag2" "desc2" "on/off" ...
-# menu:      show_menu "title" "text" "tag" "desc" "tag2" "desc2" ...
-# msgbox:    show_msgbox "title" "text"
+# Get the user's desktop environment and set the appropriate value so that the correct type of dialog helper is used
 if [[ -n "$DISPLAY" ]] && command -v kdialog &>/dev/null; then
     USE_KDIALOG=true
 else
     USE_KDIALOG=false
 fi
 
-show_checklist() {
+# Functions for the different types of dialogs that are used in the script
+show_checklist() { 
     local title="$1" text="$2"
     shift 2
     if [[ "$USE_KDIALOG" == true ]]; then
@@ -42,12 +47,11 @@ show_checklist() {
         whiptail --title "$title" --checklist "$text" "$height" 60 "$count" "$@" 3>&1 1>&2 2>&3
     fi
 }
-
 show_menu() {
     local title="$1" text="$2"
     shift 2
     if [[ "$USE_KDIALOG" == true ]]; then
-        # same fix — combine tag + description for display
+        # kdialog only shows the label, not the tag — combine them so the app name is visible
         local args=()
         while [[ $# -ge 2 ]]; do
             args+=("$1" "$1 — $2")
@@ -60,8 +64,7 @@ show_menu() {
         whiptail --title "$title" --menu "$text" "$height" 60 "$count" "$@" 3>&1 1>&2 2>&3
     fi
 }
-
-show_msgbox() {
+show_msgbox() { 
     local title="$1" text="$2"
     if [[ "$USE_KDIALOG" == true ]]; then
         # write to temp file and use --textbox for better text rendering and sizing
@@ -73,7 +76,6 @@ show_msgbox() {
         whiptail --title "$title" --scrolltext --msgbox "$text" 24 78
     fi
 }
-
 show_yesno() {
     local title="$1" text="$2"
     if [[ "$USE_KDIALOG" == true ]]; then
@@ -82,7 +84,6 @@ show_yesno() {
         whiptail --title "$title" --yesno "$text" 12 60
     fi
 }
-
 show_input() {
     local title="$1" text="$2"
     if [[ "$USE_KDIALOG" == true ]]; then
@@ -91,7 +92,6 @@ show_input() {
         whiptail --title "$title" --inputbox "$text" 10 60 3>&1 1>&2 2>&3
     fi
 }
-
 show_password() {
     local title="$1" text="$2"
     if [[ "$USE_KDIALOG" == true ]]; then
@@ -101,7 +101,7 @@ show_password() {
     fi
 }
 
-# helper to install a .deb from a URL, keeps the same pattern as the rest of the script
+# Function to install a .deb from a URL, quietly and without user interaction
 install_deb() {
     local name="$1" url="$2" filename="$3"
     if wget -qO "$TMPDIR/$filename" "$url" && sudo DEBIAN_FRONTEND=noninteractive apt install -y "$TMPDIR/$filename" >> "$LOG" 2>&1; then
@@ -114,7 +114,8 @@ install_deb() {
     fi
 }
 
-# 0. Detect which DE is installed so we can configure the right display manager and settings
+# Detect which DE is installed so we can configure the right display manager and settings
+say "[0/16] Detecting system configuration"
 if command -v plasmashell &>/dev/null; then
     DE="kde"
 elif command -v gnome-shell &>/dev/null; then
@@ -132,25 +133,27 @@ elif command -v lxsession &>/dev/null; then
 else
     DE="unknown"
 fi
-say "Detected desktop environment: $DE"
+say_dont_skip_line "Detected desktop environment: $DE"
 
-# 1. Detect GPU (AMD vs NVIDIA)
+# Detect GPU 
 if lspci | grep -qiE "VGA.*NVIDIA|3D.*NVIDIA"; then
     GPU="nvidia"
-elif lspci | grep -qiE "VGA.*AMD|VGA.*ATI|3D.*AMD"; then
+elif lspci | grep -qiE "VGA.*AMD|VGA.*\bATI\b|3D.*AMD"; then  # for ATI, use \b to match the word "ATI" specifically since "ati" is a common substring
     GPU="amd"
+elif lspci | grep -qiE "VGA.*Intel|3D.*Intel"; then
+    GPU="intel"
 else
     GPU="unknown"
 fi
-say "Detected GPU: $GPU"
+say_dont_skip_line "Detected GPU: $GPU"
 
-# 2. Detect device type (laptop vs desktop) for power/input settings
-if [[ -e /sys/class/power_supply/BAT0 ]] || [[ -e /sys/class/power_supply/BAT1 ]]; then
+# Detect device type (laptop vs desktop) for power/input settings
+if [[ -e /sys/class/power_supply/BAT0 ]] || [[ -e /sys/class/power_supply/BAT1 ]]; then # checks if a battery is present
     DEVICE_TYPE="laptop"
 else
     DEVICE_TYPE="desktop"
 fi
-say "Detected device type: $DEVICE_TYPE"
+say_dont_skip_line "Detected device type: $DEVICE_TYPE"
 
 # Ask display scaling early so all subsequent dialogs render at the right size
 SCALE_CHOICE="1"
@@ -164,25 +167,23 @@ if [[ "$DE" == "kde" ]]; then
     ) || SCALE_CHOICE=""
 fi
 
-# 3. Autologon and removing sudo password + no lock on sleep
+# Autologon and removing sudo password + no lock on sleep
 say "[1/16] Configuring autologin and passwordless sudo"
 
-if [[ "$DE" == "kde" ]]; then
+if [[ "$DE" == "kde" ]]; then  # SDDM auto-login for KDE
     sudo mkdir -p /etc/sddm.conf.d
-    echo -e "[Autologin]\nUser=$REAL_USER\nSession=plasma" | sudo tee /etc/sddm.conf.d/autologin.conf >/dev/null  # SDDM auto-login for KDE
-elif [[ "$DE" == "gnome" ]]; then
-    # GDM auto-login
+    echo -e "[Autologin]\nUser=$REAL_USER\nSession=plasma" | sudo tee /etc/sddm.conf.d/autologin.conf >/dev/null  
+elif [[ "$DE" == "gnome" ]]; then  # GDM auto-login
     sudo mkdir -p /etc/gdm3
     if [[ -f /etc/gdm3/daemon.conf ]]; then
         sudo sed -i "s/^\[daemon\]/[daemon]\nAutomaticLoginEnable=true\nAutomaticLogin=$REAL_USER/" /etc/gdm3/daemon.conf
     else
         echo -e "[daemon]\nAutomaticLoginEnable=true\nAutomaticLogin=$REAL_USER" | sudo tee /etc/gdm3/daemon.conf >/dev/null
     fi
-elif [[ "$DE" == "lxqt" ]]; then
+elif [[ "$DE" == "lxqt" ]]; then  # SDDM auto-login for LXQt
     sudo mkdir -p /etc/sddm.conf.d
-    echo -e "[Autologin]\nUser=$REAL_USER\nSession=lxqt" | sudo tee /etc/sddm.conf.d/autologin.conf >/dev/null  # SDDM auto-login for LXQt
-else
-    # Xfce, Cinnamon, MATE, LXDE all use LightDM
+    echo -e "[Autologin]\nUser=$REAL_USER\nSession=lxqt" | sudo tee /etc/sddm.conf.d/autologin.conf >/dev/null  
+else  # Xfce, Cinnamon, MATE, LXDE all use LightDM
     if [[ -f /etc/lightdm/lightdm.conf ]]; then
         sudo sed -i "s/^#\?autologin-user=.*/autologin-user=$REAL_USER/" /etc/lightdm/lightdm.conf
     else
@@ -190,11 +191,10 @@ else
         echo -e "[Seat:*]\nautologin-user=$REAL_USER" | sudo tee /etc/lightdm/lightdm.conf >/dev/null
     fi
 fi
-
 echo "$REAL_USER ALL=(ALL:ALL) NOPASSWD: ALL" | sudo tee /etc/sudoers.d/nopasswd >/dev/null  # Passwordless sudo
-say_dont_skip_line "done."
 
-# 4. System Update
+
+# System Update
 say "[2/16] Updating system packages"
 say_dont_skip_line "Syncing package lists..."
 sudo apt update >> "$LOG" 2>&1
@@ -206,7 +206,7 @@ sudo apt update >> "$LOG" 2>&1
 sudo apt upgrade -y >> "$LOG" 2>&1
 say_dont_skip_line "done."
 
-# 5. Firmware & Essentials (GPU-aware)
+# Firmware & Essentials (GPU-aware)
 say "[3/16] Installing firmware and essentials"
 say_dont_skip_line "Installing firmware-linux..."
 sudo apt install -y firmware-linux >> "$LOG" 2>&1 || true
@@ -216,10 +216,13 @@ if [[ "$GPU" == "nvidia" ]]; then
 elif [[ "$GPU" == "amd" ]]; then
     say_dont_skip_line "Installing firmware-amd-graphics..."
     sudo apt install -y firmware-amd-graphics >> "$LOG" 2>&1 || true
+elif [[ "$GPU" == "intel" ]]; then
+    say_dont_skip_line "Installing firmware-intel-sound..."
+    sudo apt install -y firmware-intel-sound >> "$LOG" 2>&1 || true
 fi
 say_dont_skip_line "done."
 
-# 6. Enable Non-Free Repositories, hardcoded so no issue even if script ran multiple times
+# Enable Non-Free Repositories, hardcoded lines so no issue even if script ran multiple times; should work for any Debian-based distro
 say "[4/16] Enabling non-free repositories"
 DEBIAN_CODENAME=$(. /etc/os-release && echo "$VERSION_CODENAME")
 sudo tee /etc/apt/sources.list > /dev/null << EOF
@@ -235,13 +238,11 @@ EOF
 sudo apt update >> "$LOG" 2>&1
 say_dont_skip_line "done."
 
-# 7. KDE bloatware removal — apps nobody asked for
+# KDE bloatware removal — apps nobody asked for
 if [[ "$DE" == "kde" ]]; then
     say "[5/16] Removing KDE bloatware"
-    # mark ALL currently installed packages as manually installed so autoremove can never cascade
-    # and accidentally remove critical KDE packages like SDDM
     say_dont_skip_line "Protecting installed packages..."
-    sudo apt-mark manual $(apt-mark showauto) >> "$LOG" 2>&1 || true
+    sudo apt-mark manual $(apt-mark showauto) >> "$LOG" 2>&1 || true  # mark ALL currently installed packages as manually installed so autoremove can never cascade and accidentally remove critical KDE packages like SDDM
 
     BLOAT_PACKAGES="akregator dragonplayer imagemagick imagemagick-6-common imagemagick-7-common imagemagick-7.q16 juk kaddressbook kaddressbook-data kmail kdepim-themeeditors kmousetool kmouth konqueror konqueror-data konq-plugins korganizer ktnef pim-data-exporter pim-sieve-editor qsynth sweeper xterm libreoffice-core libreoffice-common libreoffice-calc libreoffice-draw libreoffice-impress libreoffice-math libreoffice-writer libreoffice-base-core libreoffice-help-common libreoffice-help-en-us libreoffice-kf6 libreoffice-plasma libreoffice-qt6 libreoffice-style-breeze libreoffice-style-colibre"
     say_dont_skip_line "Purging bloatware..."
@@ -251,13 +252,13 @@ if [[ "$DE" == "kde" ]]; then
     say_dont_skip_line "done."
 fi
 
-# 8. Fish Shell
+# Fish Shell
 say "[6/16] Installing Fish shell"
 sudo apt install -y fish >> "$LOG" 2>&1
 sudo chsh -s /usr/bin/fish "$REAL_USER" >> "$LOG" 2>&1
 say_dont_skip_line "Fish is now your default shell. It takes effect on next login/restart."
 
-# 9. GPU Drivers
+# GPU Drivers
 say "[7/16] Installing GPU drivers"
 say_dont_skip_line "Enabling 32-bit architecture..."
 sudo dpkg --add-architecture i386 >> "$LOG" 2>&1  # needed for Steam and 32-bit game libs regardless of GPU
@@ -274,12 +275,10 @@ elif [[ "$GPU" == "nvidia" ]]; then
     sudo apt install -y nvidia-driver firmware-misc-nonfree nvidia-kernel-dkms >> "$LOG" 2>&1
 
     # GRUB config for NVIDIA — fixes black screen issues and enables DRM modesetting
-    say_dont_skip_line "Configuring GRUB for NVIDIA"
     sudo sed -i 's/^GRUB_CMDLINE_LINUX_DEFAULT=.*/GRUB_CMDLINE_LINUX_DEFAULT="quiet nvidia-drm.modeset=1 nvidia-drm.fbdev=1 nvidia.NVreg_PreserveVideoMemoryAllocations=1"/' /etc/default/grub
     sudo update-grub >> "$LOG" 2>&1
 
     # Modprobe config — blacklist nouveau + NVIDIA module loading chain
-    say_dont_skip_line "Configuring modprobe for NVIDIA"
     sudo tee /etc/modprobe.d/nvidia.conf > /dev/null << 'MODPROBE_EOF'
 # Blacklist nouveau to prevent conflicts with nvidia driver
 blacklist nouveau
@@ -305,16 +304,18 @@ alias   pci:v000010DEd*sv*sd*bc03sc02i00*               nvidia
 alias   pci:v000010DEd*sv*sd*bc03sc00i00*               nvidia
 MODPROBE_EOF
     sudo update-initramfs -u >> "$LOG" 2>&1
+    sudo systemctl enable nvidia-suspend.service nvidia-hibernate.service nvidia-resume.service >> "$LOG" 2>&1 # Enable NVIDIA suspend/hibernate/resume services
 
-    # Enable NVIDIA suspend/hibernate/resume services
-    sudo systemctl enable nvidia-suspend.service nvidia-hibernate.service nvidia-resume.service >> "$LOG" 2>&1
-    say_dont_skip_line "NVIDIA drivers and configuration done."
+elif [[ "$GPU" == "intel" ]]; then
+    say_dont_skip_line "Installing Intel GPU/Vulkan drivers + 32-bit libraries..."
+    sudo apt install -y mesa-vulkan-drivers libvulkan1 vulkan-tools mesa-utils intel-media-va-driver intel-gpu-tools >> "$LOG" 2>&1
+    sudo apt install -y mesa-vulkan-drivers:i386 libglx-mesa0:i386 libgl1-mesa-dri:i386 >> "$LOG" 2>&1
 
 else
     say_dont_skip_line "Unknown GPU, skipping GPU-specific drivers"
 fi
 
-# 10. Installing utilities + services (base packages always installed)
+# Installing utilities + services (base packages always installed)
 say "[8/16] Installing utilities + services"
 say_dont_skip_line "Installing audio (pipewire, wireplumber)..."
 sudo apt install -y pipewire pipewire-audio pipewire-pulse wireplumber >> "$LOG" 2>&1
@@ -325,8 +326,8 @@ say_dont_skip_line "Installing media codecs (ffmpeg, gstreamer)..."
 sudo apt install -y libavcodec-extra gstreamer1.0-plugins-bad gstreamer1.0-plugins-ugly ffmpeg >> "$LOG" 2>&1
 say_dont_skip_line "Installing media players, tools, browser..."
 sudo apt install -y mpv vlc unrar curl wget firefox-esr cifs-utils lsb-release >> "$LOG" 2>&1
-# auto-install uBlock Origin for Firefox via enterprise policy
-say_dont_skip_line "Configuring uBlock Origin for Firefox..."
+
+say_dont_skip_line "Configuring uBlock Origin for Firefox..." # auto-install uBlock Origin for Firefox via enterprise policy
 sudo mkdir -p /usr/lib/firefox-esr/distribution
 sudo tee /usr/lib/firefox-esr/distribution/policies.json > /dev/null << 'FIREFOX_POLICY'
 {
@@ -340,11 +341,13 @@ sudo tee /usr/lib/firefox-esr/distribution/policies.json > /dev/null << 'FIREFOX
   }
 }
 FIREFOX_POLICY
+
 say_dont_skip_line "Installing dev tools (git, python, pipx, cmake)..."
 sudo apt install -y git python3-pip python3-venv pipx build-essential gdb cmake >> "$LOG" 2>&1
 pipx ensurepath >> "$LOG" 2>&1
 say_dont_skip_line "Installing coding fonts (JetBrains Mono, Nerd Fonts)..."
 sudo apt install -y fonts-jetbrains-mono >> "$LOG" 2>&1 || true
+
 # Nerd Fonts (JetBrainsMono patched) — not in apt, download from GitHub
 NERDFONT_URL=$(curl -s "https://api.github.com/repos/ryanoasis/nerd-fonts/releases/latest" | grep browser_download_url | grep 'JetBrainsMono.tar.xz' | grep -oP 'https://[^"]+')
 if [[ -n "$NERDFONT_URL" ]]; then
@@ -356,12 +359,9 @@ if [[ -n "$NERDFONT_URL" ]]; then
 fi
 say_dont_skip_line "done."
 
-# ==================================================================================
-# 11. Installing apps — single checklist with category headers
-# ==================================================================================
-say "[9/16] Select apps to install"
+# Installing apps — single checklist with category headers
+say "[9/16] Apps installation"
 
-# --- Screen 1: Apps (Dev + Media + Browsers + Office) ---
 APP_CHOICES=$(show_checklist "Apps" "Select apps to install:" \
 "VSCode"            "Visual Studio Code" on \
 "VS Codium"         "FOSS VS Code fork" off \
@@ -418,31 +418,24 @@ APP_CHOICES=$(show_checklist "Apps" "Select apps to install:" \
 
 # Auto-resolve dependencies
 if [[ "$APP_CHOICES" == *"Claude Code"* ]] && [[ "$APP_CHOICES" != *"Node.js"* ]]; then
-    say_dont_skip_line "Claude Code requires Node.js — adding it automatically"
     APP_CHOICES="$APP_CHOICES Node.js"
 fi
 if [[ "$APP_CHOICES" == *"DBeaver"* ]] && [[ "$APP_CHOICES" != *"Java JDK"* ]]; then
-    say_dont_skip_line "DBeaver requires Java JDK — adding it automatically"
     APP_CHOICES="$APP_CHOICES Java JDK"
 fi
 if [[ "$APP_CHOICES" == *"Flutter"* ]] && [[ "$APP_CHOICES" != *"Google Chrome"* ]]; then
-    say_dont_skip_line "Flutter needs Chrome for web development — adding it automatically"
     APP_CHOICES="$APP_CHOICES Google Chrome"
 fi
 
+# Install the selected apps; if used, the deb install helper has the print statements so no need to repeat here
 if [[ -n "$APP_CHOICES" ]]; then
-    say "[10/16] Installing selected apps..."
+    say "Installing selected apps (any dependencies will be installed automatically)..."
 fi
-
-# ---- Dev Tools installs ----
-
 
 if [[ "$APP_CHOICES" == *"Node.js"* ]]; then
     say_dont_skip_line "Installing Node.js via nvm"
-    # install nvm as the real user, not root
-    sudo -u "$REAL_USER" bash -c 'curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.4/install.sh | bash' >> "$LOG" 2>&1
-    # source nvm and install latest LTS
-    sudo -u "$REAL_USER" bash -c 'export NVM_DIR="$HOME/.nvm" && [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh" && nvm install --lts' >> "$LOG" 2>&1
+    sudo -u "$REAL_USER" bash -c 'curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.4/install.sh | bash' >> "$LOG" 2>&1  # install nvm as the real user, not root
+    sudo -u "$REAL_USER" bash -c 'export NVM_DIR="$HOME/.nvm" && [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh" && nvm install --lts' >> "$LOG" 2>&1 # source nvm and install latest LTS
     if [[ -d "$REAL_HOME/.nvm" ]]; then
         say_dont_skip_line "Node.js installed successfully via nvm"
     else
@@ -490,8 +483,7 @@ if [[ "$APP_CHOICES" == *"Cursor"* ]]; then
 fi
 
 if [[ "$APP_CHOICES" == *"Claude Code"* ]]; then
-    say_dont_skip_line "Installing Claude Code"
-    # needs node/npm from nvm
+    say_dont_skip_line "Installing Claude Code"   # needs node/npm from nvm
     if sudo -u "$REAL_USER" bash -c 'export NVM_DIR="$HOME/.nvm" && [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh" && npm install -g @anthropic-ai/claude-code' >> "$LOG" 2>&1; then
         say_dont_skip_line "Claude Code installed successfully"
         POST_NOTES+=("Claude Code: Run 'claude' in terminal and enter your API key to get started")
@@ -502,9 +494,7 @@ if [[ "$APP_CHOICES" == *"Claude Code"* ]]; then
 fi
 
 if [[ "$APP_CHOICES" == *"Flutter"* ]]; then
-    say_dont_skip_line "Installing Flutter SDK"
-    # install Linux toolchain deps needed for flutter desktop development
-    say_dont_skip_line "Installing Flutter Linux toolchain dependencies..."
+    say_dont_skip_line "Installing Flutter SDK" # install Linux toolchain deps needed for flutter desktop development
     sudo apt install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev libstdc++-12-dev >> "$LOG" 2>&1 || true
     mkdir -p "$REAL_HOME/.local/share"
     if sudo -u "$REAL_USER" git clone https://github.com/flutter/flutter.git -b stable --depth 1 "$REAL_HOME/.local/share/flutter" >> "$LOG" 2>&1; then
@@ -517,20 +507,14 @@ if [[ "$APP_CHOICES" == *"Flutter"* ]]; then
 fi
 
 if [[ "$APP_CHOICES" == *"Android Studio"* ]]; then
-    say_dont_skip_line "Installing Android Studio"
-    # install 32-bit libs needed by Android SDK tools
-    sudo apt install -y libc6:i386 libncurses6:i386 libstdc++6:i386 lib32z1 libbz2-1.0:i386 >> "$LOG" 2>&1
-    # download Android Studio — URL may need updating if this version goes stale
-    # check https://developer.android.com/studio#downloads for the latest linux tar.gz link
+    say_dont_skip_line "Installing Android Studio (may take a while)"
+    sudo apt install -y libc6:i386 libncurses6:i386 libstdc++6:i386 lib32z1 libbz2-1.0:i386 >> "$LOG" 2>&1 # install 32-bit libs needed by Android SDK tools
+    # download Android Studio — URL may need updating if this version goes stale; check https://developer.android.com/studio#downloads for the latest linux tar.gz link
     AS_URL="https://edgedl.me.gvt1.com/android/studio/ide-zips/2025.3.2.6/android-studio-panda2-linux.tar.gz"
-    say_dont_skip_line "Downloading Android Studio (~1GB, this may take a while)..."
-    if wget --progress=dot:mega -O "$TMPDIR/android-studio.tar.gz" "$AS_URL" 2>&1 | tail -1 | tee -a "$LOG" \
-    && file "$TMPDIR/android-studio.tar.gz" | grep -q "gzip"; then
+    if wget --progress=dot:mega -O "$TMPDIR/android-studio.tar.gz" "$AS_URL" 2>&1 | tail -1 | tee -a "$LOG" && file "$TMPDIR/android-studio.tar.gz" | grep -q "gzip"; then
         mkdir -p "$REAL_HOME/.local/share"
-        say_dont_skip_line "Extracting Android Studio..."
         tar xzf "$TMPDIR/android-studio.tar.gz" -C "$REAL_HOME/.local/share/" >> "$LOG" 2>&1
-        # find the actual extracted directory name (could be android-studio or android-studio-*)
-        AS_DIR=$(find "$REAL_HOME/.local/share/" -maxdepth 1 -type d -name "android-studio*" | head -1)
+        AS_DIR=$(find "$REAL_HOME/.local/share/" -maxdepth 1 -type d -name "android-studio*" | head -1) # find the actual extracted directory name (could be android-studio or android-studio-*)
         if [[ -z "$AS_DIR" ]]; then
             say_dont_skip_line "Android Studio FAILED — extraction produced no directory"
             FAILED+=("android-studio")
@@ -540,8 +524,7 @@ if [[ "$APP_CHOICES" == *"Android Studio"* ]]; then
         fi
         if [[ -d "$REAL_HOME/.local/share/android-studio" ]]; then
             chown -R "$REAL_USER:$REAL_USER" "$REAL_HOME/.local/share/android-studio"
-        # create desktop entry so it shows up in the app launcher
-        mkdir -p "$REAL_HOME/.local/share/applications"
+            mkdir -p "$REAL_HOME/.local/share/applications"  # create desktop entry so it shows up in the app launcher
         cat > "$REAL_HOME/.local/share/applications/android-studio.desktop" << DESKTOP_EOF
 [Desktop Entry]
 Name=Android Studio
@@ -550,7 +533,7 @@ Icon=$REAL_HOME/.local/share/android-studio/bin/studio.svg
 Type=Application
 Categories=Development;IDE;
 DESKTOP_EOF
-        chown "$REAL_USER:$REAL_USER" "$REAL_HOME/.local/share/applications/android-studio.desktop"
+            chown "$REAL_USER:$REAL_USER" "$REAL_HOME/.local/share/applications/android-studio.desktop"
             say_dont_skip_line "Android Studio installed successfully"
             POST_NOTES+=("Android Studio: Launch it to complete the first-time setup wizard")
         fi
@@ -614,8 +597,6 @@ if [[ "$APP_CHOICES" == *"Qt Dev"* ]]; then
     fi
 fi
 
-# ---- Media & Gaming installs ----
-
 if [[ "$APP_CHOICES" == *"Steam"* ]]; then
     say_dont_skip_line "Installing Steam..."
     install_deb "Steam" "https://cdn.akamai.steamstatic.com/client/installer/steam.deb" "steam.deb"
@@ -660,8 +641,7 @@ if [[ "$APP_CHOICES" == *"Sunshine"* ]]; then
     if [[ -n "$SUNSHINE_DEB_URL" ]]; then
         if install_deb "Sunshine" "$SUNSHINE_DEB_URL" "sunshine.deb"; then
             sudo setcap cap_sys_admin+p $(which sunshine 2>/dev/null || echo "/usr/bin/sunshine") >> "$LOG" 2>&1 || true  # capture permissions
-            # create user-level systemd service for auto-start (not system-level)
-            mkdir -p "$REAL_HOME/.config/systemd/user"
+            mkdir -p "$REAL_HOME/.config/systemd/user"  # create user-level systemd service for auto-start (not system-level)
             cat > "$REAL_HOME/.config/systemd/user/sunshine.service" << 'SUNSHINE_SVC'
 [Unit]
 Description=Sunshine self-hosted game stream host for Moonlight
@@ -763,15 +743,12 @@ if [[ "$APP_CHOICES" == *"HandBrake"* ]]; then
     fi
 fi
 
-# ---- Browsers & Productivity installs ----
-
 if [[ "$APP_CHOICES" == *"Zen Browser"* ]]; then
     say_dont_skip_line "Installing Zen Browser..."
     mkdir -p "$REAL_HOME/.local/share/zen" "$REAL_HOME/.local/bin" "$REAL_HOME/.local/share/applications"
     if wget --progress=dot:mega -O "$TMPDIR/zen.tar.xz" "https://github.com/zen-browser/desktop/releases/latest/download/zen.linux-x86_64.tar.xz" 2>&1 | tail -1 | tee -a "$LOG" \
     && tar xf "$TMPDIR/zen.tar.xz" -C "$REAL_HOME/.local/share/zen" --strip-components=1 >> "$LOG" 2>&1; then
-        # create symlink and desktop entry
-        ln -sf "$REAL_HOME/.local/share/zen/zen" "$REAL_HOME/.local/bin/zen-browser"
+        ln -sf "$REAL_HOME/.local/share/zen/zen" "$REAL_HOME/.local/bin/zen-browser" # create symlink and desktop entry
         cat > "$REAL_HOME/.local/share/applications/zen-browser.desktop" << ZEN_EOF
 [Desktop Entry]
 Name=Zen Browser
@@ -881,8 +858,7 @@ if [[ "$APP_CHOICES" == *"LocalSend"* ]]; then
     LOCALSEND_URL=$(curl -s "https://api.github.com/repos/localsend/localsend/releases/latest" | grep browser_download_url | grep 'linux-x86-64.AppImage' | grep -oP 'https://[^"]+')
     if [[ -n "$LOCALSEND_URL" ]] && wget -qO "$REAL_HOME/.local/bin/localsend" "$LOCALSEND_URL" >> "$LOG" 2>&1; then
         chmod +x "$REAL_HOME/.local/bin/localsend"
-        # download icon
-        mkdir -p "$REAL_HOME/.local/share/icons"
+        mkdir -p "$REAL_HOME/.local/share/icons" # download icon
         wget -qO "$REAL_HOME/.local/share/icons/localsend.png" "https://raw.githubusercontent.com/localsend/localsend/main/app/assets/img/logo-512.png" >> "$LOG" 2>&1 || true
         cat > "$REAL_HOME/.local/share/applications/localsend.desktop" << LSEND_EOF
 [Desktop Entry]
@@ -900,8 +876,6 @@ LSEND_EOF
     fi
 fi
 
-# ---- System & Utilities installs ----
-
 if [[ "$APP_CHOICES" == *"Tailscale"* ]]; then
     say_dont_skip_line "Installing Tailscale..."
     if curl -fsSL https://tailscale.com/install.sh | sh >> "$LOG" 2>&1; then
@@ -917,9 +891,7 @@ fi
 if [[ "$APP_CHOICES" == *"ProtonVPN"* ]]; then
     say_dont_skip_line "Installing ProtonVPN..."
     if wget -qO "$TMPDIR/protonvpn-release.deb" "https://repo.protonvpn.com/debian/dists/stable/main/binary-all/protonvpn-stable-release_1.0.8_all.deb" \
-    && sudo dpkg -i "$TMPDIR/protonvpn-release.deb" >> "$LOG" 2>&1 \
-    && sudo apt update >> "$LOG" 2>&1 \
-    && sudo apt install -y proton-vpn-gnome-desktop >> "$LOG" 2>&1; then
+    && sudo dpkg -i "$TMPDIR/protonvpn-release.deb" >> "$LOG" 2>&1 && sudo apt update >> "$LOG" 2>&1 && sudo apt install -y proton-vpn-gnome-desktop >> "$LOG" 2>&1; then
         say_dont_skip_line "ProtonVPN installed successfully"
         POST_NOTES+=("ProtonVPN: Launch and sign in to your Proton account")
     else
@@ -928,11 +900,9 @@ if [[ "$APP_CHOICES" == *"ProtonVPN"* ]]; then
     fi
 fi
 
-
 if [[ "$APP_CHOICES" == *"Windscribe"* ]]; then
     say_dont_skip_line "Installing Windscribe..."
-    if wget -qO "$TMPDIR/windscribe.deb" "https://windscribe.com/install/desktop/linux_deb_x64" \
-    && sudo DEBIAN_FRONTEND=noninteractive apt install -y "$TMPDIR/windscribe.deb" >> "$LOG" 2>&1; then
+    if wget -qO "$TMPDIR/windscribe.deb" "https://windscribe.com/install/desktop/linux_deb_x64" && sudo DEBIAN_FRONTEND=noninteractive apt install -y "$TMPDIR/windscribe.deb" >> "$LOG" 2>&1; then
         say_dont_skip_line "Windscribe installed successfully"
         POST_NOTES+=("Windscribe: Launch and sign in to your account")
     else
@@ -981,8 +951,8 @@ if [[ "$APP_CHOICES" == *"s3fs-fuse"* ]]; then
     say_dont_skip_line "Installing s3fs-fuse..."
     if sudo apt install -y s3fs >> "$LOG" 2>&1; then
         say_dont_skip_line "s3fs-fuse installed successfully"
-        # offer to set up S3 bucket mounts
-        while show_yesno "S3 Bucket" "Do you want to mount an S3 bucket?"; do
+       
+        while show_yesno "S3 Bucket" "Do you want to mount an S3 bucket?"; do   # offer to set up S3 bucket mounts
             S3_BUCKET=$(show_input "S3 Bucket" "Enter bucket name:")
             if [[ -z "$S3_BUCKET" ]]; then break; fi
 
@@ -994,7 +964,7 @@ if [[ "$APP_CHOICES" == *"s3fs-fuse"* ]]; then
             mkdir -p "$MOUNT_POINT"
             chown "$REAL_USER:$REAL_USER" "$MOUNT_POINT"
 
-            # store credentials
+            # store credentials in a file
             S3_CRED_FILE="$REAL_HOME/.passwd-s3fs-$S3_BUCKET"
             echo "$S3_ACCESS_KEY:$S3_SECRET_KEY" > "$S3_CRED_FILE"
             chown "$REAL_USER:$REAL_USER" "$S3_CRED_FILE"
@@ -1007,11 +977,8 @@ if [[ "$APP_CHOICES" == *"s3fs-fuse"* ]]; then
             fi
             echo "s3fs#$S3_BUCKET $MOUNT_POINT fuse $S3_OPTS 0 0" | sudo tee -a /etc/fstab > /dev/null
 
-            # enable allow_other in fuse config
-            sudo sed -i 's/^#user_allow_other/user_allow_other/' /etc/fuse.conf 2>/dev/null || true
-
-            # mount it now
-            sudo mount "$MOUNT_POINT" >> "$LOG" 2>&1 || true
+            sudo sed -i 's/^#user_allow_other/user_allow_other/' /etc/fuse.conf 2>/dev/null || true  # enable allow_other in fuse config
+            sudo mount "$MOUNT_POINT" >> "$LOG" 2>&1 || true  # mount it now
 
             # add to Dolphin sidebar under Remote
             PLACES_FILE="$REAL_HOME/.local/share/user-places.xbel"
@@ -1073,11 +1040,9 @@ if [[ "$APP_CHOICES" == *"smartmontools"* ]]; then
 fi
 
 if [[ "$APP_CHOICES" == *"Whisper"* ]]; then
-    say_dont_skip_line "Installing faster-whisper in a virtual environment..."
+    say_dont_skip_line "Installing faster-whisper in a virtual environment (may take a while)..."
     WHISPER_VENV="$REAL_HOME/.local/share/faster-whisper-venv"
-    if sudo -u "$REAL_USER" python3 -m venv "$WHISPER_VENV" >> "$LOG" 2>&1 \
-    && sudo -u "$REAL_USER" "$WHISPER_VENV/bin/pip" install faster-whisper >> "$LOG" 2>&1; then
-        say_dont_skip_line "Pre-caching large-v3-turbo model (~1.5GB, this may take a while)..."
+    if sudo -u "$REAL_USER" python3 -m venv "$WHISPER_VENV" >> "$LOG" 2>&1 && sudo -u "$REAL_USER" "$WHISPER_VENV/bin/pip" install faster-whisper >> "$LOG" 2>&1; then
         sudo -u "$REAL_USER" "$WHISPER_VENV/bin/python" -c "from faster_whisper import WhisperModel; WhisperModel('large-v3-turbo', device='cpu')" >> "$LOG" 2>&1
         say_dont_skip_line "faster-whisper + large-v3-turbo model installed successfully"
     else
@@ -1086,13 +1051,11 @@ if [[ "$APP_CHOICES" == *"Whisper"* ]]; then
     fi
 fi
 
-# ==================================================================================
 # Network share mount setup (optional)
-# ==================================================================================
 while show_yesno "Network Share" "Do you want to mount a network share (SMB/CIFS)?"; do
     SHARE_PATH=$(show_input "Network Share" "Enter share path (e.g., //192.168.1.100/MyShare):")
     if [[ -z "$SHARE_PATH" ]]; then break; fi
-
+    
     SHARE_USER=$(show_input "Network Share" "Enter username for $SHARE_PATH:")
     SHARE_PASS=$(show_password "Network Share" "Enter password for $SHARE_PATH:")
     SHARE_NAME=$(echo "$SHARE_PATH" | sed 's|^//||;s|/|-|g')
@@ -1111,7 +1074,6 @@ CRED_EOF
     REAL_UID=$(id -u "$REAL_USER")
     REAL_GID=$(id -g "$REAL_USER")
     echo "$SHARE_PATH $MOUNT_POINT cifs credentials=$CRED_FILE,uid=$REAL_UID,gid=$REAL_GID,iocharset=utf8,nofail,_netdev,x-systemd.automount,x-systemd.idle-timeout=0 0 0" | sudo tee -a /etc/fstab > /dev/null
-
     sudo mount "$MOUNT_POINT" >> "$LOG" 2>&1 || true
 
     # add to Dolphin sidebar under Remote
