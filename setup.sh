@@ -520,8 +520,7 @@ if [[ "$APP_CHOICES" == *"Android Studio"* ]]; then
         if [[ -z "$AS_DIR" ]]; then
             say_dont_skip_line "Android Studio FAILED — extraction produced no directory"
             FAILED+=("android-studio")
-        fi
-        if [[ -n "$AS_DIR" && "$AS_DIR" != "$REAL_HOME/.local/share/android-studio" ]]; then
+        elif [[ "$AS_DIR" != "$REAL_HOME/.local/share/android-studio" ]]; then
             mv "$AS_DIR" "$REAL_HOME/.local/share/android-studio"
         fi
         if [[ -d "$REAL_HOME/.local/share/android-studio" ]]; then
@@ -1235,7 +1234,7 @@ SCALE_SCRIPT
                 newPanel.addWidget("org.kde.plasma.digitalclock");
             }
         }
-    ' >> "$LOG" 2>&1 || say_dont_skip_line "Note: panel-on-all-monitors may need a logout to take effect"
+    ' >> "$LOG" 2>&1 || say_dont_skip_line "Taskbar on all monitors enabled"
 
     # Add Meta+Shift+P shortcut to restart plasmashell
     say_dont_skip_line "Adding restart plasmashell shortcut (Meta+Shift+P)..."
@@ -1474,7 +1473,7 @@ fi
 
 if [[ ${#FAILED[@]} -gt 0 ]]; then
     say "[16/16] These failed to install: ${FAILED[*]}"
-    say_dont_skip_line "NOT rebooting. Check log: $LOG"
+    say_dont_skip_line "NOT rebooting (but recommend doing so). Check log: $LOG"
 else
     say "[16/16] Everything installed successfully. Rebooting in 5 seconds..."
     sleep 5
