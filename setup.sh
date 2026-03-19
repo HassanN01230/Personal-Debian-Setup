@@ -157,8 +157,8 @@ say_dont_skip_line "Detected device type: $DEVICE_TYPE"
 # Ask display scaling early so all subsequent dialogs render at the right size
 SCALE_CHOICE="1"
 if [[ "$DE" == "kde" ]]; then
-    CURRENT_RES=$(xrandr 2>/dev/null | grep '\*' | grep -oP '\d+x\d+' | head -1)
-    CURRENT_SCALE=$(kscreen-doctor -o 2>&1 | sed 's/\x1b\[[0-9;]*m//g' | grep -ioP 'scale:\s*\K[0-9.]+' | head -1)
+    CURRENT_RES=$(timeout 5 xrandr 2>/dev/null | grep '\*' | grep -oP '\d+x\d+' | head -1)
+    CURRENT_SCALE=$(timeout 5 kscreen-doctor -o 2>&1 | sed 's/\x1b\[[0-9;]*m//g' | grep -ioP 'scale:\s*\K[0-9.]+' | head -1)
     [[ -z "$CURRENT_SCALE" ]] && CURRENT_SCALE=$(grep -oP 'ScaleFactor=\K[0-9.]+' "$REAL_HOME/.config/kdeglobals" 2>/dev/null)
     SCREEN_HEIGHT=$(echo "$CURRENT_RES" | cut -d'x' -f2)
     RECOMMENDED="1"  # default recommended is 1x (for below 1080p)
