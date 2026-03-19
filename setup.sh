@@ -1079,7 +1079,9 @@ while show_yesno "Network Share" "Do you want to mount a network share (SMB/CIFS
         say_dont_skip_line "Network share $SHARE_PATH mounted at $MOUNT_POINT"
     else
         sudo rm -f "$CRED_FILE"
+        rmdir "$MOUNT_POINT" 2>/dev/null  # remove the mount point directory if it was created since our mounting failed (bad creds or network problem or something else)
         say_dont_skip_line "Network share $SHARE_PATH failed to mount — check path/credentials and try again"
+        continue  # continue the loop to next iteration immediately so the dolphin sidebar stuff below doesnt execute
     fi
 
     # add to Dolphin sidebar under Remote
