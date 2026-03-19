@@ -1151,18 +1151,40 @@ confirmLogout=false
 KSMSRV
 
     if [[ "$DEVICE_TYPE" == "laptop" ]]; then
-        # applies the settings to the touchpad (all detected touchpads) now since we will restart the session later to apply the settings
-        say_dont_skip_line "Enabling natural scrolling (laptop touchpad)..." 
-        sudo mkdir -p /etc/X11/xorg.conf.d
-        sudo tee /etc/X11/xorg.conf.d/40-touchpad.conf > /dev/null << 'TOUCHPAD_EOF'
-Section "InputClass"
-    Identifier "touchpad"
-    Driver "libinput"
-    MatchIsTouchpad "on"
-    Option "NaturalScrolling" "true"
-EndSection
-TOUCHPAD_EOF
-    fi
+        say_dont_skip_line "Enabling natural scrolling (laptop)..."
+        # detect touchpad NOW (we have root access) and bake values into an autostart script that will apply natural scrolling on next user login
+        sudo apt install -y libinput-tools >> "$LOG" 2>&1 || true
+        TOUCHPAD_INFO=$(sudo libinput list-devices 2>/dev/null | grep -A5 -i touchpad | grep "Kernel:" | head -1 | awk '{print $2}')
+        if [[ -n "$TOUCHPAD_INFO" ]]; then
+            EVENT_NAME=$(basename "$TOUCHPAD_INFO")
+            TP_VENDOR_HEX=$(cat /sys/class/input/$EVENT_NAME/device/id/vendor 2>/dev/null)
+            TP_PRODUCT_HEX=$(cat /sys/class/input/$EVENT_NAME/device/id/product 2>/dev/null)
+            TP_NAME=$(sudo libinput list-devices 2>/dev/null | grep -B1 "$TOUCHPAD_INFO" | head -1 | sed 's/.*Device: *//')
+            TP_VENDOR_DEC=$((16#$TP_VENDOR_HEX))
+            TP_PRODUCT_DEC=$((16#$TP_PRODUCT_HEX))
+            say_dont_skip_line "Found touchpad: $TP_NAME (vendor=$TP_VENDOR_DEC product=$TP_PRODUCT_DEC)"
+
+            # create autostart script with hardcoded values (no sudo needed at runtime; script runs as the real user and will delete itself after running)
+            mkdir -p "$REAL_HOME/.config/autostart" "$REAL_HOME/.local/bin"
+            cat > "$REAL_HOME/.config/autostart/apply-natural-scroll.desktop" << NS_DESKTOP
+[Desktop Entry]
+Type=Application
+Name=Apply Natural Scrolling
+Exec=$REAL_HOME/.local/bin/apply-natural-scroll.sh
+X-KDE-autostart-phase=2
+NS_DESKTOP
+            cat > "$REAL_HOME/.local/bin/apply-natural-scroll.sh" << NS_SCRIPT
+#!/bin/bash
+sleep 3
+kwriteconfig6 --file kcminputrc --group "Libinput" --group "$TP_VENDOR_DEC" --group "$TP_PRODUCT_DEC" --group "$TP_NAME" --key NaturalScroll true
+rm -f "\$HOME/.config/autostart/apply-natural-scroll.desktop"
+rm -f "\$HOME/.local/bin/apply-natural-scroll.sh"
+NS_SCRIPT
+            chmod +x "$REAL_HOME/.local/bin/apply-natural-scroll.sh"
+            chown "$REAL_USER:$REAL_USER" "$REAL_HOME/.config/autostart/apply-natural-scroll.desktop" "$REAL_HOME/.local/bin/apply-natural-scroll.sh"
+        else
+            say_dont_skip_line "No touchpad detected, skipping natural scrolling"
+        fi
 
     # Display scaling — apply the choice made at the start of the script
     if [[ -n "$SCALE_CHOICE" ]]; then
