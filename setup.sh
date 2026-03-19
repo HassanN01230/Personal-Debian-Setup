@@ -8,7 +8,6 @@
 
 [ -z "$BASH_VERSION" ] && bash # trying to enforce bash if running from fish or another shell but this doesnt work i think
 [[ -f "$0" && "$0" == *.sh ]] && chmod +x "$0" # doesnt really matter but just in case the script is run as a file, make it executable
-trap 'say "Script interrupted by user."; exit 130' INT # trap INT signal (Ctrl+C); if user presses Ctrl+C at any time, then this trap will be triggered and the script will exit with code 130
 
 REAL_USER="${SUDO_USER:-$USER}"  # get the real user name if running as sudo, otherwise use the current user
 REAL_HOME=$(eval echo ~"$REAL_USER")
@@ -1146,40 +1145,17 @@ confirmLogout=false
 KSMSRV
 
     if [[ "$DEVICE_TYPE" == "laptop" ]]; then
-        say_dont_skip_line "Enabling natural scrolling (laptop)..."
-        # detect touchpad NOW (we have root access) and bake values into autostart script
-        sudo apt install -y libinput-tools >> "$LOG" 2>&1 || true
-        TOUCHPAD_INFO=$(sudo libinput list-devices 2>/dev/null | grep -A5 -i touchpad | grep "Kernel:" | head -1 | awk '{print $2}')
-        if [[ -n "$TOUCHPAD_INFO" ]]; then
-            EVENT_NAME=$(basename "$TOUCHPAD_INFO")
-            TP_VENDOR_HEX=$(cat /sys/class/input/$EVENT_NAME/device/id/vendor 2>/dev/null)
-            TP_PRODUCT_HEX=$(cat /sys/class/input/$EVENT_NAME/device/id/product 2>/dev/null)
-            TP_NAME=$(sudo libinput list-devices 2>/dev/null | grep -B1 "$TOUCHPAD_INFO" | head -1 | sed 's/.*Device: *//')
-            TP_VENDOR_DEC=$((16#$TP_VENDOR_HEX))
-            TP_PRODUCT_DEC=$((16#$TP_PRODUCT_HEX))
-            say_dont_skip_line "Found touchpad: $TP_NAME (vendor=$TP_VENDOR_DEC product=$TP_PRODUCT_DEC)"
-
-            # create autostart script with hardcoded values (no sudo needed at runtime; script runs as the real user and will delete itself after running)
-            mkdir -p "$REAL_HOME/.config/autostart" "$REAL_HOME/.local/bin"
-            cat > "$REAL_HOME/.config/autostart/apply-natural-scroll.desktop" << NS_DESKTOP
-[Desktop Entry]
-Type=Application
-Name=Apply Natural Scrolling
-Exec=$REAL_HOME/.local/bin/apply-natural-scroll.sh
-X-KDE-autostart-phase=2
-NS_DESKTOP
-            cat > "$REAL_HOME/.local/bin/apply-natural-scroll.sh" << NS_SCRIPT
-#!/bin/bash
-sleep 3
-kwriteconfig6 --file kcminputrc --group "Libinput" --group "$TP_VENDOR_DEC" --group "$TP_PRODUCT_DEC" --group "$TP_NAME" --key NaturalScroll true
-rm -f "\$HOME/.config/autostart/apply-natural-scroll.desktop"
-rm -f "\$HOME/.local/bin/apply-natural-scroll.sh"
-NS_SCRIPT
-            chmod +x "$REAL_HOME/.local/bin/apply-natural-scroll.sh"
-            chown "$REAL_USER:$REAL_USER" "$REAL_HOME/.config/autostart/apply-natural-scroll.desktop" "$REAL_HOME/.local/bin/apply-natural-scroll.sh"
-        else
-            say_dont_skip_line "No touchpad detected, skipping natural scrolling"
-        fi
+        # applies the settings to the touchpad (all detected touchpads) now since we will restart the session later to apply the settings
+        say_dont_skip_line "Enabling natural scrolling (laptop touchpad)..." 
+        sudo mkdir -p /etc/X11/xorg.conf.d
+        sudo tee /etc/X11/xorg.conf.d/40-touchpad.conf > /dev/null << 'TOUCHPAD_EOF'
+Section "InputClass"
+    Identifier "touchpad"
+    Driver "libinput"
+    MatchIsTouchpad "on"
+    Option "NaturalScrolling" "true"
+EndSection
+TOUCHPAD_EOF
     fi
 
     # Display scaling — apply the choice made at the start of the script
@@ -1465,7 +1441,7 @@ fi
 
 # remove the autostart entry so this script doesnt run again on next login
 say_dont_skip_line "Removing autostart entry..."
-sudo rm -f /etc/xdg/autostart/debian-setup.desktop 2>/dev/null
+sudo rm -f /etc/xdg/autostart/debian-setup.desktop 2>/dev/null   # Where does this even come from? Maybe the preseed?
 
 if [[ -f "$0" && "$0" == *.sh ]]; then
     rm -- "$0" && say "Script file deleted: $0" || say "Failed to delete script file: $0" # delete the script file if ran as a file, but not if pasted into terminal (where $0 is /bin/bash)
@@ -1473,9 +1449,16 @@ fi
 
 if [[ ${#FAILED[@]} -gt 0 ]]; then
     say "[16/16] These failed to install: ${FAILED[*]}"
-    say_dont_skip_line "NOT rebooting (but recommend doing so). Check log: $LOG"
+    FAIL_FILE="$REAL_HOME/Desktop/setup-failures.txt"
+    echo "The following packages/apps failed to install:" > "$FAIL_FILE"
+    for f in "${FAILED[@]}"; do echo "  - $f" >> "$FAIL_FILE"; done
+    echo -e "\nFull log: $LOG" >> "$FAIL_FILE"
+    chown "$REAL_USER:$REAL_USER" "$FAIL_FILE"
+    say_dont_skip_line "Failure list saved to ~/Desktop/setup-failures.txt"
 else
-    say "[16/16] Everything installed successfully. Rebooting in 5 seconds..."
-    sleep 5
-    sudo reboot
+    say "[16/16] Everything installed successfully!"
 fi
+
+say "Rebooting in 5 seconds..."
+sleep 5
+sudo reboot
