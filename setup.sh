@@ -326,7 +326,11 @@ sudo systemctl enable --now bluetooth >> "$LOG" 2>&1
 say_dont_skip_line "Installing media codecs (ffmpeg, gstreamer)..."
 sudo apt install -y libavcodec-extra gstreamer1.0-plugins-bad gstreamer1.0-plugins-ugly ffmpeg >> "$LOG" 2>&1
 say_dont_skip_line "Installing media players, tools, browser..."
-sudo apt install -y mpv vlc unrar curl wget firefox-esr cifs-utils lsb-release >> "$LOG" 2>&1
+sudo apt install -y mpv vlc unrar curl wget firefox-esr cifs-utils winbind libnss-winbind lsb-release >> "$LOG" 2>&1
+
+if ! grep -q 'wins' /etc/nsswitch.conf 2>/dev/null; then # enable NetBIOS name resolution so SMB hostnames (e.g. //myserver/share) resolve
+    sudo sed -i 's/^hosts:.*/& wins/' /etc/nsswitch.conf
+fi
 
 say_dont_skip_line "Configuring uBlock Origin for Firefox..." # auto-install uBlock Origin for Firefox via enterprise policy
 sudo mkdir -p /usr/lib/firefox-esr/distribution
@@ -1064,18 +1068,12 @@ while show_yesno "Network Share" "Do you want to mount a network share (SMB/CIFS
     mkdir -p "$MOUNT_POINT"
     chown "$REAL_USER:$REAL_USER" "$MOUNT_POINT"
 
-    CRED_FILE="$REAL_HOME/.smbcredentials-$SHARE_NAME"
-    cat > "$CRED_FILE" << CRED_EOF
-username=$SHARE_USER
-password=$SHARE_PASS
-CRED_EOF
-    chown "$REAL_USER:$REAL_USER" "$CRED_FILE"
-    chmod 600 "$CRED_FILE"
-
     REAL_UID=$(id -u "$REAL_USER")
     REAL_GID=$(id -g "$REAL_USER")
-    echo "$SHARE_PATH $MOUNT_POINT cifs credentials=$CRED_FILE,uid=$REAL_UID,gid=$REAL_GID,iocharset=utf8,nofail,_netdev,x-systemd.automount,x-systemd.idle-timeout=0 0 0" | sudo tee -a /etc/fstab > /dev/null
-    sudo mount "$MOUNT_POINT" >> "$LOG" 2>&1 || true
+    MOUNT_OPTS="username=$SHARE_USER,password=$SHARE_PASS,rw,vers=3.0,sec=ntlmssp,uid=$REAL_UID,gid=$REAL_GID,iocharset=utf8,file_mode=0775,dir_mode=0775"
+    echo "$SHARE_PATH $MOUNT_POINT cifs ${MOUNT_OPTS},nofail,_netdev,x-systemd.automount,x-systemd.idle-timeout=0 0 0" | sudo tee -a /etc/fstab > /dev/null
+    sudo systemctl daemon-reload 2>/dev/null
+    sudo mount -t cifs "$SHARE_PATH" "$MOUNT_POINT" -o "$MOUNT_OPTS" >> "$LOG" 2>&1 || true
 
     # add to Dolphin sidebar under Remote
     PLACES_FILE="$REAL_HOME/.local/share/user-places.xbel"
