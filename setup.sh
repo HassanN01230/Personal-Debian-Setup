@@ -1060,7 +1060,9 @@ say "[10/16] Network share mount setup (optional)"
 while show_yesno "Network Share" "Do you want to mount a network share (SMB/CIFS)?"; do
     SHARE_PATH=$(show_input "Network Share" "Enter share path (e.g., //192.168.1.100/MyShare):")
     if [[ -z "$SHARE_PATH" ]]; then break; fi
-    
+    SHARE_PATH=$(echo "$SHARE_PATH" | sed 's|\\|/|g; s|^/*||')
+    SHARE_PATH="//$SHARE_PATH"
+
     SHARE_USER=$(show_input "Network Share" "Enter username for $SHARE_PATH:")
     SHARE_PASS=$(show_password "Network Share" "Enter password for $SHARE_PATH:")
     SHARE_NAME=$(echo "$SHARE_PATH" | sed 's|^//||;s|/|-|g')
@@ -1068,12 +1070,20 @@ while show_yesno "Network Share" "Do you want to mount a network share (SMB/CIFS
     mkdir -p "$MOUNT_POINT"
     chown "$REAL_USER:$REAL_USER" "$MOUNT_POINT"
 
+    CRED_FILE="/etc/smb-credentials-$SHARE_NAME"
+    printf 'username=%s\npassword=%s\n' "$SHARE_USER" "$SHARE_PASS" | sudo tee "$CRED_FILE" > /dev/null
+    sudo chmod 600 "$CRED_FILE"
+
     REAL_UID=$(id -u "$REAL_USER")
     REAL_GID=$(id -g "$REAL_USER")
-    MOUNT_OPTS="username=$SHARE_USER,password=$SHARE_PASS,rw,vers=3.0,sec=ntlmssp,uid=$REAL_UID,gid=$REAL_GID,iocharset=utf8,file_mode=0775,dir_mode=0775"
+    MOUNT_OPTS="credentials=$CRED_FILE,rw,vers=3.0,sec=ntlmssp,uid=$REAL_UID,gid=$REAL_GID,iocharset=utf8,file_mode=0775,dir_mode=0775"
     echo "$SHARE_PATH $MOUNT_POINT cifs ${MOUNT_OPTS},nofail,_netdev,x-systemd.automount,x-systemd.idle-timeout=0 0 0" | sudo tee -a /etc/fstab > /dev/null
     sudo systemctl daemon-reload 2>/dev/null
-    sudo mount -t cifs "$SHARE_PATH" "$MOUNT_POINT" -o "$MOUNT_OPTS" >> "$LOG" 2>&1 || true
+    if sudo mount -t cifs "$SHARE_PATH" "$MOUNT_POINT" -o "$MOUNT_OPTS" >> "$LOG" 2>&1; then
+        say_dont_skip_line "Network share $SHARE_PATH mounted at $MOUNT_POINT"
+    else
+        say_dont_skip_line "Network share $SHARE_PATH failed to mount now (will retry at boot via fstab)"
+    fi
 
     # add to Dolphin sidebar under Remote
     PLACES_FILE="$REAL_HOME/.local/share/user-places.xbel"
@@ -1094,8 +1104,7 @@ while show_yesno "Network Share" "Do you want to mount a network share (SMB/CIFS
 </xbel>
 NET_PLACES
     fi
-    say_dont_skip_line "Network share $SHARE_PATH mounted at $MOUNT_POINT"
-    POST_NOTES+=("Network share: $SHARE_PATH mounted at ~/Network/$SHARE_NAME")
+    POST_NOTES+=("Network share: $SHARE_PATH → ~/Network/$SHARE_NAME")
 done
 
 # Applying system settings (Desktop Environment-specific)
