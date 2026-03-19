@@ -161,9 +161,10 @@ if [[ "$DE" == "kde" ]]; then
     CURRENT_SCALE=$(kscreen-doctor -o 2>&1 | sed 's/\x1b\[[0-9;]*m//g' | grep -ioP 'scale:\s*\K[0-9.]+' | head -1)
     [[ -z "$CURRENT_SCALE" ]] && CURRENT_SCALE=$(grep -oP 'ScaleFactor=\K[0-9.]+' "$REAL_HOME/.config/kdeglobals" 2>/dev/null)
     SCREEN_HEIGHT=$(echo "$CURRENT_RES" | cut -d'x' -f2)
-    RECOMMENDED="1"
+    RECOMMENDED="1"  # default recommended is 1x (for below 1080p)
     if [[ -n "$SCREEN_HEIGHT" ]]; then
-        if   (( SCREEN_HEIGHT >= 1440 )); then RECOMMENDED="1.5"  # if resolution is 1440p or higher, use 1.5x scaling
+        if   (( SCREEN_HEIGHT >= 2160 )); then RECOMMENDED="2"  # if resolution is 4K or higher, use 2x scaling
+        elif (( SCREEN_HEIGHT >= 1440 )); then RECOMMENDED="1.5"  # if resolution is 2K or higher, use 1.5x scaling
         elif (( SCREEN_HEIGHT >= 1080 )); then RECOMMENDED="1.25"  # if resolution is 1080p or higher, use 1.25x scaling
         fi
     fi
