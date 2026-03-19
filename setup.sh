@@ -1186,23 +1186,10 @@ SCALE_SCRIPT
         say_dont_skip_line "Display scaling set to ${SCALE_CHOICE}x"
     fi
 
-    # Enabling Konsole profile settings to not display warning on close or paste
-    KONSOLE_PROFILE_DIR="$REAL_HOME/.local/share/konsole"
-    mkdir -p "$KONSOLE_PROFILE_DIR"
-   
-    KONSOLE_PROFILE=$(find "$KONSOLE_PROFILE_DIR" -name "*.profile" | head -1)   # Find existing profile or create default one
-    if [[ -z "$KONSOLE_PROFILE" ]]; then
-        KONSOLE_PROFILE="$KONSOLE_PROFILE_DIR/Default.profile"
-        cat > "$KONSOLE_PROFILE" << 'KPROFILE'
-[General]
-Name=Default
-Parent=FALLBACK/
-KPROFILE
-    fi
-    # Inject keys to avoid duplicates
-    grep -q "^WarnOnClose" "$KONSOLE_PROFILE" && sed -i 's/^WarnOnClose=.*/WarnOnClose=false/' "$KONSOLE_PROFILE" || echo "WarnOnClose=false" >> "$KONSOLE_PROFILE"
-    grep -q "^PasteFromClipboardWarningEnabled" "$KONSOLE_PROFILE" && sed -i 's/^PasteFromClipboardWarningEnabled=.*/PasteFromClipboardWarningEnabled=false/' "$KONSOLE_PROFILE" || echo "PasteFromClipboardWarningEnabled=false" >> "$KONSOLE_PROFILE"
-    chown -R "$REAL_USER:$REAL_USER" "$KONSOLE_PROFILE_DIR"
+    # Disabling Konsole warning for closing all tabs and pasting huge text
+    say_dont_skip_line "Disabling Konsole warning for closing all tabs and pasting huge text..."
+    sudo -u "$REAL_USER" kwriteconfig6 --file "$REAL_HOME/.config/konsolerc" --group "Notification Messages" --key "ShowPasteHugeTextWarning" "false"
+    sudo -u "$REAL_USER" kwriteconfig6 --file "$REAL_HOME/.config/konsolerc" --group "Notification Messages" --key "CloseAllTabs" "true"
 
     # Taskbar on all monitors — uses plasmashell JS evaluation; this adds a default panel to any monitor that doesnt already have one
     REAL_UID=$(id -u "$REAL_USER")
@@ -1436,14 +1423,11 @@ if [[ ${#POST_NOTES[@]} -gt 0 ]]; then
         NOTES_TEXT="$NOTES_TEXT\n- $note"
     done
 fi
-NOTES_TEXT="$NOTES_TEXT\n\nThe system will restart to apply all changes (dark theme, scaling, etc)."
 
 # save to desktop so the user can reference later
 echo -e "$NOTES_TEXT" > "$REAL_HOME/Desktop/post-install-notes.txt"
 chown "$REAL_USER:$REAL_USER" "$REAL_HOME/Desktop/post-install-notes.txt"
 say_dont_skip_line "Post-install notes saved to ~/Desktop/post-install-notes.txt"
-
-show_msgbox "Post-Install Notes" "$(echo -e "$NOTES_TEXT")" || true
 
 # Cleanup
 say "[15/16] Cleaning up"
