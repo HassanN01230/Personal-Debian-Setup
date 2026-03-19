@@ -191,12 +191,15 @@ else  # Xfce, Cinnamon, MATE, LXDE all use LightDM
         echo -e "[Seat:*]\nautologin-user=$REAL_USER" | sudo tee /etc/lightdm/lightdm.conf >/dev/null
     fi
 fi
+
 echo "$REAL_USER ALL=(ALL:ALL) NOPASSWD: ALL" | sudo tee /etc/sudoers.d/nopasswd >/dev/null  # Passwordless sudo
+say_dont_skip_line "done."
 
 
 # System Update
 say "[2/16] Updating system packages"
 say_dont_skip_line "Syncing package lists..."
+sudo dpkg --configure -a >> "$LOG" 2>&1 || true # configure any packages that were interrupted previously so that the dpkg lock doesnt have a stroke and is now available for our script to use
 sudo apt update >> "$LOG" 2>&1
 say_dont_skip_line "Installing NTP time sync..."
 sudo apt install -y ntpsec-ntpdate >> "$LOG" 2>&1
@@ -208,16 +211,15 @@ say_dont_skip_line "done."
 
 # Firmware & Essentials (GPU-aware)
 say "[3/16] Installing firmware and essentials"
-say_dont_skip_line "Installing firmware-linux..."
 sudo apt install -y firmware-linux >> "$LOG" 2>&1 || true
 if [[ "$GPU" == "nvidia" ]]; then
-    say_dont_skip_line "Installing firmware-misc-nonfree (NVIDIA)..."
+    say_dont_skip_line "Installing for Nvidia..."
     sudo apt install -y firmware-misc-nonfree >> "$LOG" 2>&1 || true
 elif [[ "$GPU" == "amd" ]]; then
-    say_dont_skip_line "Installing firmware-amd-graphics..."
+    say_dont_skip_line "Installing for AMD..."
     sudo apt install -y firmware-amd-graphics >> "$LOG" 2>&1 || true
 elif [[ "$GPU" == "intel" ]]; then
-    say_dont_skip_line "Installing firmware-intel-sound..."
+    say_dont_skip_line "Installing for Intel..."
     sudo apt install -y firmware-intel-sound >> "$LOG" 2>&1 || true
 fi
 say_dont_skip_line "done."
@@ -256,7 +258,7 @@ fi
 say "[6/16] Installing Fish shell"
 sudo apt install -y fish >> "$LOG" 2>&1
 sudo chsh -s /usr/bin/fish "$REAL_USER" >> "$LOG" 2>&1
-say_dont_skip_line "Fish is now your default shell. It takes effect on next login/restart."
+say_dont_skip_line "Fish is now your default shell (takes effect on restart)."
 
 # GPU Drivers
 say "[7/16] Installing GPU drivers"
@@ -1052,6 +1054,7 @@ if [[ "$APP_CHOICES" == *"Whisper"* ]]; then
 fi
 
 # Network share mount setup (optional)
+say "[10/16] Network share mount setup (optional)"
 while show_yesno "Network Share" "Do you want to mount a network share (SMB/CIFS)?"; do
     SHARE_PATH=$(show_input "Network Share" "Enter share path (e.g., //192.168.1.100/MyShare):")
     if [[ -z "$SHARE_PATH" ]]; then break; fi
@@ -1099,9 +1102,7 @@ NET_PLACES
     POST_NOTES+=("Network share: $SHARE_PATH mounted at ~/Network/$SHARE_NAME")
 done
 
-# ==================================================================================
-# 12. Settings (DE-specific)
-# ==================================================================================
+# Applying system settings (Desktop Environment-specific)
 say "[11/16] Applying system settings"
 
 if [[ "$DE" == "kde" ]]; then
@@ -1110,8 +1111,7 @@ if [[ "$DE" == "kde" ]]; then
     KDE_CFG="$REAL_HOME/.config"
 
     say_dont_skip_line "Setting Breeze Dark theme..."
-    timeout 10 sudo -u "$REAL_USER" plasma-apply-lookandfeel -a org.kde.breezedark.desktop >> "$LOG" 2>&1 || \
-        timeout 10 sudo -u "$REAL_USER" lookandfeeltool -a org.kde.breezedark.desktop >> "$LOG" 2>&1 || true
+    timeout 10 sudo -u "$REAL_USER" plasma-apply-lookandfeel -a org.kde.breezedark.desktop >> "$LOG" 2>&1 || timeout 10 sudo -u "$REAL_USER" lookandfeeltool -a org.kde.breezedark.desktop >> "$LOG" 2>&1 || true
 
     # write KDE settings directly to config files to avoid kwriteconfig6 hanging issues
     say_dont_skip_line "Enabling night light (5300K)..."
@@ -1124,8 +1124,7 @@ NightTemperature=5300
 KWIN_NIGHT
 
     say_dont_skip_line "Adding Always-on-Top button to title bar..."
-    # F = Keep Above (always on top), M = Menu, S = On All Desktops
-    sed -i '/^\[org\.kde\.kdecoration2\]/,/^$/d' "$KDE_CFG/kwinrc" 2>/dev/null || true
+    sed -i '/^\[org\.kde\.kdecoration2\]/,/^$/d' "$KDE_CFG/kwinrc" 2>/dev/null || true # F = Keep Above (always on top), M = Menu, S = On All Desktops
     sudo -u "$REAL_USER" bash -c "cat >> '$KDE_CFG/kwinrc'" << 'KWIN_BUTTONS'
 
 [org.kde.kdecoration2]
@@ -1161,7 +1160,7 @@ KSMSRV
             TP_PRODUCT_DEC=$((16#$TP_PRODUCT_HEX))
             say_dont_skip_line "Found touchpad: $TP_NAME (vendor=$TP_VENDOR_DEC product=$TP_PRODUCT_DEC)"
 
-            # create autostart script with hardcoded values (no sudo needed at runtime)
+            # create autostart script with hardcoded values (no sudo needed at runtime; script runs as the real user and will delete itself after running)
             mkdir -p "$REAL_HOME/.config/autostart" "$REAL_HOME/.local/bin"
             cat > "$REAL_HOME/.config/autostart/apply-natural-scroll.desktop" << NS_DESKTOP
 [Desktop Entry]
@@ -1212,8 +1211,7 @@ SCALE_SCRIPT
         say_dont_skip_line "Display scaling set to ${SCALE_CHOICE}x"
     fi
 
-    # Taskbar on all monitors — uses plasmashell JS evaluation
-    # This adds a default panel to any monitor that doesnt already have one
+    # Taskbar on all monitors — uses plasmashell JS evaluation; this adds a default panel to any monitor that doesnt already have one
     REAL_UID=$(id -u "$REAL_USER")
     sudo -u "$REAL_USER" DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$REAL_UID/bus" \
         timeout 10 qdbus6 org.kde.plasmashell /PlasmaShell org.kde.PlasmaShell.evaluateScript '
@@ -1241,8 +1239,7 @@ SCALE_SCRIPT
 
     # Add Meta+Shift+P shortcut to restart plasmashell
     say_dont_skip_line "Adding restart plasmashell shortcut (Meta+Shift+P)..."
-    # create desktop file with the command shortcut flag KDE needs
-    mkdir -p "$REAL_HOME/.local/share/applications" "$REAL_HOME/.local/bin"
+    mkdir -p "$REAL_HOME/.local/share/applications" "$REAL_HOME/.local/bin" # create desktop file with the command shortcut flag KDE needs
     cat > "$REAL_HOME/.local/share/applications/restart-plasmashell.desktop" << 'DESKTOP_EOF'
 [Desktop Entry]
 Exec=killall plasmashell && kstart plasmashell
@@ -1255,17 +1252,14 @@ DESKTOP_EOF
     chown "$REAL_USER:$REAL_USER" "$REAL_HOME/.local/share/applications/restart-plasmashell.desktop"
 
     # register the shortcut in kglobalshortcutsrc
-    sudo -u "$REAL_USER" kwriteconfig6 --file kglobalshortcutsrc \
-        --group "services" --group "restart-plasmashell.desktop" \
-        --key "_launch" "Meta+Shift+P"
+    sudo -u "$REAL_USER" kwriteconfig6 --file kglobalshortcutsrc --group "services" --group "restart-plasmashell.desktop" --key "_launch" "Meta+Shift+P"
     POST_NOTES+=("Shortcut: Meta+Shift+P restarts plasmashell (useful if desktop glitches)")
 
     # Populate taskbar — defaults + user picks from installed apps
     say_dont_skip_line "Configuring taskbar apps..."
     TASKBAR_LAUNCHERS="applications:systemsettings.desktop,applications:org.kde.plasma-systemmonitor.desktop,preferred://filemanager,applications:firefox-esr.desktop,applications:org.kde.konsole.desktop"
 
-    # use .desktop filenames as tags so we get them back directly from the checklist
-    # use app name as tag (shown to user), map back to .desktop file after selection
+    # use .desktop filenames as tags so we get them back directly from the checklist; use app name as tag (shown to user), map back to .desktop file after selection
     PIN_ARGS=()
     declare -A PIN_MAP
     add_pin() { PIN_ARGS+=("$1" "$2" off); PIN_MAP["$1"]="$2"; }
@@ -1381,33 +1375,21 @@ POWER_EOF
 
     say_dont_skip_line "Applying KDE config changes..."
     REAL_UID=$(id -u "$REAL_USER")
-    sudo -u "$REAL_USER" DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$REAL_UID/bus" \
-        timeout 5 qdbus6 org.kde.KWin /KWin reconfigure >> "$LOG" 2>&1 || true
+    sudo -u "$REAL_USER" DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$REAL_UID/bus" timeout 5 qdbus6 org.kde.KWin /KWin reconfigure >> "$LOG" 2>&1 || true
     say_dont_skip_line "done."
 
-elif [[ "$DE" == "gnome" || "$DE" == "cinnamon" ]]; then
-    # GNOME and Cinnamon both use gsettings for night light
+elif [[ "$DE" == "gnome" || "$DE" == "cinnamon" ]]; then  # GNOME and Cinnamon both use gsettings for night light
     sudo -u "$REAL_USER" gsettings set org.gnome.settings-daemon.plugins.color night-light-enabled true
     sudo -u "$REAL_USER" gsettings set org.gnome.settings-daemon.plugins.color night-light-temperature 5300  # Nightlight configuration
     if [[ "$DE" == "gnome" ]]; then
         sudo -u "$REAL_USER" gsettings set org.gnome.SessionManager logout-prompt false  # disable confirmation for logout
     fi
 
-elif [[ "$DE" == "xfce" ]]; then
-    say_dont_skip_line "Xfce doesnt have a built-in night light, install redshift if you want one"
-
-elif [[ "$DE" == "mate" ]]; then
-    say_dont_skip_line "MATE doesnt have a built-in night light, install redshift if you want one"
-
-elif [[ "$DE" == "lxqt" || "$DE" == "lxde" ]]; then
-    say_dont_skip_line "LXQt/LXDE doesnt have a built-in night light, install redshift if you want one"
+elif [[ "$DE" == "xfce" || "$DE" == "mate" || "$DE" == "lxqt" || "$DE" == "lxde" ]]; then
+    say_dont_skip_line "This desktop environment ('$DE') doesnt have a built-in night light, install redshift if you want one"
 fi
 
-
-
-# ==================================================================================
-# 13. Shell PATH configuration — only adds entries for tools that were actually installed
-# ==================================================================================
+# Shell PATH configuration — only adds entries for tools that were actually installed
 say "[12/16] Configuring shell PATH entries"
 mkdir -p "$REAL_HOME/.config/fish"
 touch "$REAL_HOME/.config/fish/config.fish"
@@ -1444,18 +1426,14 @@ fi
 
 chown -R "$REAL_USER:$REAL_USER" "$REAL_HOME/.config/fish"
 
-# ==================================================================================
-# 14. Default media player — MPV takes priority since its always installed
-# ==================================================================================
+# Default media player — MPV takes priority since its always installed
 say "[13/16] Setting default media player to mpv"
 MEDIA_TYPES="video/mp4 video/x-matroska video/webm video/mpeg video/x-msvideo video/quicktime audio/mpeg audio/flac audio/ogg audio/x-wav audio/mp4"
 for mime in $MEDIA_TYPES; do
     sudo -u "$REAL_USER" xdg-mime default mpv.desktop "$mime" >> "$LOG" 2>&1
 done
 
-# ==================================================================================
-# 15. Post-install notes — show the user what they need to do after reboot
-# ==================================================================================
+# Post-install notes — show the user what they need to do after reboot
 say "[14/16] Post-install notes"
 NOTES_TEXT="Post-Install Notes\n==================\n"
 if [[ ${#POST_NOTES[@]} -gt 0 ]]; then
@@ -1470,13 +1448,11 @@ NOTES_TEXT="$NOTES_TEXT\n\nThe system will restart to apply all changes (dark th
 # save to desktop so the user can reference later
 echo -e "$NOTES_TEXT" > "$REAL_HOME/Desktop/post-install-notes.txt"
 chown "$REAL_USER:$REAL_USER" "$REAL_HOME/Desktop/post-install-notes.txt"
-say_dont_skip_line "Notes saved to ~/Desktop/post-install-notes.txt"
+say_dont_skip_line "Post-install notes saved to ~/Desktop/post-install-notes.txt"
 
 show_msgbox "Post-Install Notes" "$(echo -e "$NOTES_TEXT")" || true
 
-# ==================================================================================
-# 16. Cleanup
-# ==================================================================================
+# Cleanup
 say "[15/16] Cleaning up"
 rm -rf "$TMPDIR" # remove the temporary directory
 
