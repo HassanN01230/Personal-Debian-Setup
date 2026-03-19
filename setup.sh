@@ -157,7 +157,22 @@ say_dont_skip_line "Detected device type: $DEVICE_TYPE"
 # Ask display scaling early so all subsequent dialogs render at the right size
 SCALE_CHOICE="1"
 if [[ "$DE" == "kde" ]]; then
-    SCALE_CHOICE=$(show_menu "Display Scaling" "Select display scaling (or ESC to keep current):" \
+    CURRENT_RES=$(xrandr 2>/dev/null | grep '\*' | grep -oP '\d+x\d+' | head -1)
+    CURRENT_SCALE=$(kscreen-doctor -o 2>&1 | sed 's/\x1b\[[0-9;]*m//g' | grep -ioP 'scale:\s*\K[0-9.]+' | head -1)
+    [[ -z "$CURRENT_SCALE" ]] && CURRENT_SCALE=$(grep -oP 'ScaleFactor=\K[0-9.]+' "$REAL_HOME/.config/kdeglobals" 2>/dev/null)
+    SCREEN_HEIGHT=$(echo "$CURRENT_RES" | cut -d'x' -f2)
+    RECOMMENDED="1"
+    if [[ -n "$SCREEN_HEIGHT" ]]; then
+        if   (( SCREEN_HEIGHT >= 1440 )); then RECOMMENDED="1.5"  # if resolution is 1440p or higher, use 1.5x scaling
+        elif (( SCREEN_HEIGHT >= 1080 )); then RECOMMENDED="1.25"  # if resolution is 1080p or higher, use 1.25x scaling
+        fi
+    fi
+    SCALE_INFO="Current resolution: ${CURRENT_RES:-unknown}"
+    SCALE_INFO+="\nCurrent scaling: ${CURRENT_SCALE:-unknown}"
+    KEEP_HINT=""; [[ "$CURRENT_SCALE" == "$RECOMMENDED" ]] && KEEP_HINT=" (keep)"
+    SCALE_INFO+="\nRecommended: ${RECOMMENDED}x${KEEP_HINT}"
+    SCALE_INFO+="\n\nSelect display scaling (or ESC to keep current):"
+    SCALE_CHOICE=$(show_menu "Display Scaling" "$SCALE_INFO" \
     "1"      "100%" \
     "1.25"   "125%" \
     "1.5"    "150%" \
@@ -1185,6 +1200,7 @@ NS_SCRIPT
         else
             say_dont_skip_line "No touchpad detected, skipping natural scrolling"
         fi
+    fi
 
     # Display scaling — apply the choice made at the start of the script
     if [[ -n "$SCALE_CHOICE" ]]; then
