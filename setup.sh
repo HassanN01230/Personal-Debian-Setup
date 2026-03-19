@@ -328,10 +328,6 @@ sudo apt install -y libavcodec-extra gstreamer1.0-plugins-bad gstreamer1.0-plugi
 say_dont_skip_line "Installing media players, tools, browser..."
 sudo apt install -y mpv vlc unrar curl wget firefox-esr cifs-utils winbind libnss-winbind lsb-release >> "$LOG" 2>&1
 
-if ! grep -q 'wins' /etc/nsswitch.conf 2>/dev/null; then # enable NetBIOS name resolution so SMB hostnames (e.g. //myserver/share) resolve
-    sudo sed -i 's/^hosts:.*/& wins/' /etc/nsswitch.conf
-fi
-
 say_dont_skip_line "Configuring uBlock Origin for Firefox..." # auto-install uBlock Origin for Firefox via enterprise policy
 sudo mkdir -p /usr/lib/firefox-esr/distribution
 sudo tee /usr/lib/firefox-esr/distribution/policies.json > /dev/null << 'FIREFOX_POLICY'
@@ -1077,12 +1073,13 @@ while show_yesno "Network Share" "Do you want to mount a network share (SMB/CIFS
     REAL_UID=$(id -u "$REAL_USER")
     REAL_GID=$(id -g "$REAL_USER")
     MOUNT_OPTS="credentials=$CRED_FILE,rw,vers=3.0,sec=ntlmssp,uid=$REAL_UID,gid=$REAL_GID,iocharset=utf8,file_mode=0775,dir_mode=0775"
-    echo "$SHARE_PATH $MOUNT_POINT cifs ${MOUNT_OPTS},nofail,_netdev,x-systemd.automount,x-systemd.idle-timeout=0 0 0" | sudo tee -a /etc/fstab > /dev/null
-    sudo systemctl daemon-reload 2>/dev/null
     if sudo mount -t cifs "$SHARE_PATH" "$MOUNT_POINT" -o "$MOUNT_OPTS" >> "$LOG" 2>&1; then
+        echo "$SHARE_PATH $MOUNT_POINT cifs ${MOUNT_OPTS},nofail,_netdev,x-systemd.automount,x-systemd.idle-timeout=0 0 0" | sudo tee -a /etc/fstab > /dev/null
+        sudo systemctl daemon-reload 2>/dev/null
         say_dont_skip_line "Network share $SHARE_PATH mounted at $MOUNT_POINT"
     else
-        say_dont_skip_line "Network share $SHARE_PATH failed to mount now (will retry at boot via fstab)"
+        sudo rm -f "$CRED_FILE"
+        say_dont_skip_line "Network share $SHARE_PATH failed to mount — check path/credentials and try again"
     fi
 
     # add to Dolphin sidebar under Remote
