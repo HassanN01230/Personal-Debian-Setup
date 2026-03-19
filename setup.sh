@@ -1100,30 +1100,37 @@ while show_yesno "Network Share" "Do you want to mount a network share (SMB/CIFS
         continue  # continue the loop to next iteration immediately so the dolphin sidebar stuff below doesnt execute
     fi
 
-    # add to Dolphin sidebar under Remote
-    PLACES_FILE="$REAL_HOME/.local/share/user-places.xbel"
-    if [[ -f "$PLACES_FILE" ]]; then
-        sed -i "s|</xbel>||" "$PLACES_FILE"
-        sudo -u "$REAL_USER" bash -c "cat >> '$PLACES_FILE'" << NET_PLACES
- <bookmark href="file://$MOUNT_POINT">
-  <title>$SHARE_NAME</title>
-  <info>
-   <metadata owner="http://freedesktop.org">
-    <bookmark:icon name="network-server"/>
-   </metadata>
-   <metadata owner="http://www.kde.org">
-    <IsSystemItem>true</IsSystemItem>
-   </metadata>
-  </info>
- </bookmark>
-</xbel>
-NET_PLACES
-    fi
     POST_NOTES+=("Network share: $SHARE_PATH → ~/Network/$SHARE_NAME")
 done
 
 # Applying system settings (Desktop Environment-specific)
 say "[11/16] Applying system settings"
+
+if [[ "$DE" == "kde" ]]; then # Clean up Dolphin sidebar — remove Music, Recent Files, Recent Locations, Network
+    PLACES_FILE="$REAL_HOME/.local/share/user-places.xbel"
+    if [[ -f "$PLACES_FILE" ]]; then
+        sudo -u "$REAL_USER" python3 << PYEOF
+import xml.etree.ElementTree as ET
+path = '$PLACES_FILE'
+tree = ET.parse(path)
+root = tree.getroot()
+
+REMOVE_HREFS = {
+    'remote:/',
+    'recentlyused:/files',
+    'recentlyused:/locations',
+    'file://${REAL_HOME}/Music',
+}
+
+to_remove = [b for b in root.findall('bookmark') if b.get('href', '') in REMOVE_HREFS]
+for b in to_remove:
+    root.remove(b)
+
+tree.write(path, encoding='UTF-8', xml_declaration=True)
+PYEOF
+        chown "$REAL_USER:$REAL_USER" "$PLACES_FILE"
+    fi
+fi
 
 if [[ "$DE" == "kde" ]]; then
     # all KDE settings must be written to the real user's config, not root's
@@ -1159,11 +1166,12 @@ KWIN_BUTTONS
 Enabled=false
 KWALLET
 
-    say_dont_skip_line "Disabling logout confirmation..."
+    say_dont_skip_line "Disabling logout confirmation and dont restore session on login..."  
     sudo -u "$REAL_USER" bash -c "cat >> '$KDE_CFG/ksmserverrc'" << 'KSMSRV'
 
 [General]
 confirmLogout=false
+loginMode=emptySession  
 KSMSRV
 
     if [[ "$DEVICE_TYPE" == "laptop" ]]; then
@@ -1235,6 +1243,10 @@ SCALE_SCRIPT
     say_dont_skip_line "Disabling Konsole warning for closing all tabs and pasting huge text..."
     sudo -u "$REAL_USER" kwriteconfig6 --file "$REAL_HOME/.config/konsolerc" --group "Notification Messages" --key "ShowPasteHugeTextWarning" "false"
     sudo -u "$REAL_USER" kwriteconfig6 --file "$REAL_HOME/.config/konsolerc" --group "Notification Messages" --key "CloseAllTabs" "true"
+
+    say_dont_skip_line "Setting Dolphin to always open to Home..."  # dont remember last dolphin opened tabs and always open to Home
+    sudo -u "$REAL_USER" kwriteconfig6 --file "$REAL_HOME/.config/dolphinrc" --group "General" --key "RememberOpenedTabs" "false"
+    sudo -u "$REAL_USER" kwriteconfig6 --file "$REAL_HOME/.config/dolphinrc" --group "General" --key "HomeUrl" "file://$REAL_HOME"
 
     # Taskbar on all monitors — uses plasmashell JS evaluation; this adds a default panel to any monitor that doesnt already have one
     REAL_UID=$(id -u "$REAL_USER")
